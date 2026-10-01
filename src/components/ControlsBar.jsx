@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity } from 'react-native';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -24,196 +24,104 @@ export function ControlsBar({
   onOpenExport
 }) {
   return (
-    <View style={styles.container}>
-      {/* Top Action Row: Script Modal & Export Studio */}
-      <View style={styles.topActionsRow}>
+    <View className="w-full px-4 pb-4 items-center gap-2.5">
+      {/* NLE Inspector Actions: Script & Timeline Export */}
+      <View className="flex-row justify-between w-full">
         <TouchableOpacity 
-          style={styles.actionPill} 
+          className="flex-row items-center gap-1.5 bg-resolve-panel border border-resolve-border px-3 py-1.5 rounded-xs active:bg-resolve-border" 
           onPress={onOpenScript}
           disabled={isRecording}
+          activeOpacity={0.8}
         >
-          <FileText size={14} color="#38BDF8" />
-          <Text style={styles.actionPillText}>Script & Presets</Text>
+          <FileText size={12} color="#DEDEDE" />
+          <Text className="text-resolve-text text-[11px] font-semibold uppercase tracking-wider">SCRIPT BIN</Text>
         </TouchableOpacity>
 
         <TouchableOpacity 
-          style={[styles.actionPill, recordedCount > 0 && styles.exportReadyPill]} 
+          className={`flex-row items-center gap-1.5 px-3 py-1.5 rounded-xs border ${
+            recordedCount > 0 
+              ? 'bg-resolve-panel border-resolve-accent' 
+              : 'bg-resolve-panel/50 border-resolve-border opacity-50'
+          }`}
           onPress={onOpenExport}
           disabled={isRecording || recordedCount === 0}
+          activeOpacity={0.8}
         >
-          <Film size={14} color={recordedCount > 0 ? '#10B981' : '#64748B'} />
-          <Text style={[styles.actionPillText, recordedCount > 0 && styles.exportReadyText]}>
-            Stitch & Export ({recordedCount}/{totalBeats})
+          <Film size={12} color={recordedCount > 0 ? '#F26D21' : '#888888'} />
+          <Text className={`text-[11px] font-semibold uppercase tracking-wider ${
+            recordedCount > 0 ? 'text-resolve-accent' : 'text-resolve-muted'
+          }`}>
+            RENDER TIMELINE ({recordedCount}/{totalBeats})
           </Text>
         </TouchableOpacity>
       </View>
 
-      {/* Main Studio Record & Navigation Row */}
-      <View style={styles.mainControlsRow}>
+      {/* Hardware Transport Controls (Jog / Shuttle / Record) */}
+      <View className="flex-row items-center justify-center gap-4 w-full">
         
-        {/* Previous Beat */}
+        {/* Previous Beat (Jog Step Backward) */}
         <TouchableOpacity
-          style={[styles.circleNavBtn, (currentBeatIndex === 0 || isRecording) && styles.btnDisabled]}
+          className={`w-11 h-11 bg-resolve-panel border border-resolve-border rounded-xs items-center justify-center active:bg-resolve-border ${
+            (currentBeatIndex === 0 || isRecording) ? 'opacity-30' : ''
+          }`}
           onPress={onPrevious}
           disabled={currentBeatIndex === 0 || isRecording}
+          activeOpacity={0.7}
         >
-          <ChevronLeft size={22} color="#FFFFFF" />
+          <ChevronLeft size={18} color="#DEDEDE" />
         </TouchableOpacity>
 
-        {/* Big Studio Record Button */}
+        {/* NLE Master Record / Punch-in Button */}
         {!isRecording ? (
           <TouchableOpacity
-            style={styles.recordButton}
+            className="flex-row items-center gap-2.5 bg-resolve-crimson border border-resolve-crimsonDark py-3 px-6 rounded-xs active:opacity-90"
             onPress={onStartRecord}
+            activeOpacity={0.85}
           >
-            <View style={styles.recordInnerDot} />
-            <Text style={styles.recordBtnText}>BEAT #{currentBeatIndex + 1}</Text>
+            <View className="w-2.5 h-2.5 bg-white rounded-none" />
+            <Text className="text-white text-xs font-bold uppercase tracking-wider font-mono">
+              RECORD TAKE {currentBeatIndex + 1}/{totalBeats}
+            </Text>
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
-            style={styles.stopButton}
+            className="flex-row items-center gap-2.5 bg-resolve-recessed border-2 border-resolve-crimson py-3 px-6 rounded-xs active:opacity-90"
             onPress={onStopRecord}
+            activeOpacity={0.85}
           >
-            <Square size={20} color="#FFFFFF" fill="#FFFFFF" />
-            <Text style={styles.stopBtnText}>STOP BEAT</Text>
+            <Square size={13} color="#C73B3B" fill="#C73B3B" />
+            <Text className="text-resolve-crimson text-xs font-bold uppercase tracking-wider font-mono">
+              STOP RECORDING
+            </Text>
           </TouchableOpacity>
         )}
 
-        {/* Next Beat */}
+        {/* Next Beat (Jog Step Forward) */}
         <TouchableOpacity
-          style={[styles.circleNavBtn, (currentBeatIndex === totalBeats - 1 || isRecording) && styles.btnDisabled]}
+          className={`w-11 h-11 bg-resolve-panel border border-resolve-border rounded-xs items-center justify-center active:bg-resolve-border ${
+            (currentBeatIndex === totalBeats - 1 || isRecording) ? 'opacity-30' : ''
+          }`}
           onPress={onNext}
           disabled={currentBeatIndex === totalBeats - 1 || isRecording}
+          activeOpacity={0.7}
         >
-          <ChevronRight size={22} color="#FFFFFF" />
+          <ChevronRight size={18} color="#DEDEDE" />
         </TouchableOpacity>
       </View>
 
-      {/* Retake Button if Beat already has a take */}
+      {/* Retake Track Beat Button */}
       {hasTake && !isRecording && (
         <TouchableOpacity 
-          style={styles.retakeBtn} 
+          className="flex-row items-center gap-1.5 bg-resolve-recessed border border-resolve-border px-2.5 py-1 rounded-xs active:bg-resolve-panel" 
           onPress={onRetake}
+          activeOpacity={0.8}
         >
-          <RotateCcw size={14} color="#FBBF24" />
-          <Text style={styles.retakeText}>Retake Beat #{currentBeatIndex + 1}</Text>
+          <RotateCcw size={11} color="#888888" />
+          <Text className="text-resolve-muted text-[10px] font-mono uppercase tracking-wider">
+            RETAKE BEAT #{currentBeatIndex + 1}
+          </Text>
         </TouchableOpacity>
       )}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    width: '100%',
-    paddingHorizontal: 20,
-    paddingBottom: 24,
-    alignItems: 'center',
-    gap: 12
-  },
-  topActionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%'
-  },
-  actionPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(9, 11, 16, 0.78)',
-    paddingVertical: 7,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)'
-  },
-  exportReadyPill: {
-    borderColor: 'rgba(16, 185, 129, 0.5)',
-    backgroundColor: 'rgba(16, 185, 129, 0.2)'
-  },
-  actionPillText: {
-    color: '#E2E8F0',
-    fontSize: 12,
-    fontWeight: '600'
-  },
-  exportReadyText: {
-    color: '#10B981'
-  },
-  mainControlsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 22,
-    width: '100%'
-  },
-  circleNavBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)'
-  },
-  btnDisabled: {
-    opacity: 0.3
-  },
-  recordButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#DC2626',
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    borderRadius: 35,
-    shadowColor: '#DC2626',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.6,
-    shadowRadius: 12
-  },
-  recordInnerDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#FFFFFF'
-  },
-  recordBtnText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
-    letterSpacing: 0.5
-  },
-  stopButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#1E293B',
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    borderRadius: 35,
-    borderWidth: 2,
-    borderColor: '#EF4444'
-  },
-  stopBtnText: {
-    color: '#EF4444',
-    fontSize: 15,
-    fontWeight: '800'
-  },
-  retakeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(245, 158, 11, 0.2)',
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.4)'
-  },
-  retakeText: {
-    color: '#FBBF24',
-    fontSize: 12,
-    fontWeight: '600'
-  }
-});

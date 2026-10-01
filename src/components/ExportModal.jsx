@@ -5,23 +5,26 @@ import {
   Text, 
   TouchableOpacity, 
   ScrollView, 
-  StyleSheet, 
   ActivityIndicator 
 } from 'react-native';
-import { X, Film, Sparkles, CheckCircle2, Trash2 } from 'lucide-react-native';
+import { X, Film, CheckCircle2, Trash2 } from 'lucide-react-native';
 import { stitchTakes } from '../utils/videoStitcher';
+import { useStudioStore } from '../store/useStudioStore';
 
 export function ExportModal({
   visible,
   onClose,
-  beats,
-  recordingTakes,
+  beats = [],
+  recordingTakes = [],
   onClearSession
 }) {
+  const { currentScript, addSavedVideo } = useStudioStore();
   const [isStitching, setIsStitching] = useState(false);
   const [stitchProgress, setStitchProgress] = useState(0);
   const [finalVideoPath, setFinalVideoPath] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
+
+  const recordedCount = (recordingTakes || []).filter(Boolean).length;
 
   const handleStitch = async () => {
     setIsStitching(true);
@@ -36,54 +39,91 @@ export function ExportModal({
 
     if (result.success) {
       setFinalVideoPath(result.outputPath);
+      addSavedVideo({
+        id: `video-${Date.now()}`,
+        title: `${currentScript?.title || 'Studio'} Recording`,
+        path: result.outputPath,
+        date: new Date().toISOString(),
+        duration: currentScript?.targetDuration || '1m',
+        takesCount: recordedCount
+      });
     } else {
       setErrorMessage(result.error || 'Failed to stitch takes');
     }
   };
 
-  const recordedCount = recordingTakes.filter(Boolean).length;
-
   return (
-    <Modal visible={visible} animationType="slide" transparent>
-      <View style={styles.modalBackdrop}>
-        <View style={styles.modalCard}>
-          
-          {/* Header */}
-          <View style={styles.modalHeader}>
-            <View style={styles.titleGroup}>
-              <View style={styles.iconCircle}>
-                <Film size={20} color="#10B981" />
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View className="flex-1 bg-black/80 justify-center p-4">
+        <View className="bg-resolve-bg border border-resolve-border rounded-xs max-h-[88%] overflow-hidden">
+
+          {/* DaVinci Resolve Deliver Header */}
+          <View className="flex-row justify-between items-center px-4 py-3 bg-resolve-header border-b border-resolve-border">
+            <View className="flex-row items-center gap-2">
+              <View className="w-6 h-6 bg-resolve-panel border border-resolve-border rounded-xs items-center justify-center">
+                <Film size={12} color="#F26D21" />
               </View>
               <View>
-                <Text style={styles.modalTitle}>Auto-Stitch & Export Studio</Text>
-                <Text style={styles.modalSubtitle}>Clean video export without prompter overlay.</Text>
+                <Text className="text-resolve-text text-xs font-bold uppercase tracking-wider font-mono">
+                  DELIVER // TIMELINE RENDER
+                </Text>
+                <Text className="text-resolve-muted text-[10px] tracking-tight">
+                  Clean native stream concatenation without HUD burn-in
+                </Text>
               </View>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <X size={20} color="#94A3B8" />
+            <TouchableOpacity onPress={onClose} className="p-1 active:bg-resolve-panel" activeOpacity={0.7}>
+              <X size={18} color="#888888" />
             </TouchableOpacity>
           </View>
 
           {/* Body */}
-          <View style={styles.modalBody}>
-            {/* Takes status list */}
-            <Text style={styles.sectionHeading}>Takes Ready for Stitching ({recordedCount}/{beats.length})</Text>
+          <View className="p-4">
+            <View className="flex-row justify-between items-center mb-2">
+              <Text className="text-resolve-muted font-mono text-[10px] font-bold uppercase tracking-wider">
+                TRACK CLIPS ({recordedCount}/{beats.length} ARMED)
+              </Text>
+              <Text className="text-resolve-accent font-mono text-[10px] uppercase">
+                {recordedCount === beats.length ? 'ALL TAKES READY' : `${beats.length - recordedCount} PENDING`}
+              </Text>
+            </View>
 
-            <ScrollView style={styles.takesList} showsVerticalScrollIndicator={false}>
+            <ScrollView className="max-h-56 mb-3" showsVerticalScrollIndicator={false}>
               {beats.map((beat, index) => {
                 const hasTake = !!recordingTakes[index];
                 return (
-                  <View key={beat.id} style={[styles.takeItem, hasTake && styles.takeItemReady]}>
-                    <Text style={styles.takeNum}>#{index + 1}</Text>
-                    <View style={styles.takeInfo}>
-                      <Text style={styles.takeSection}>{beat.section}</Text>
-                      <Text style={styles.takeSnippet} numberOfLines={1}>{beat.spokenText}</Text>
+                  <View 
+                    key={beat.id || index} 
+                    className={`flex-row items-center justify-between p-2.5 mb-1.5 rounded-xs border ${
+                      hasTake 
+                        ? 'bg-resolve-panel border-resolve-border' 
+                        : 'bg-resolve-recessed/60 border-resolve-border/40 opacity-60'
+                    }`}
+                  >
+                    <View className="flex-row items-center gap-2 flex-1 mr-2">
+                      <View className="w-5 h-5 bg-resolve-recessed border border-resolve-border rounded-none items-center justify-center">
+                        <Text className="text-resolve-muted font-mono text-[9px] font-bold">
+                          {index + 1}
+                        </Text>
+                      </View>
+                      <View className="flex-1">
+                        <Text className="text-resolve-text text-[11px] font-bold uppercase font-mono">
+                          {beat.section}
+                        </Text>
+                        <Text className="text-resolve-muted text-[10px]" numberOfLines={1}>
+                          {beat.spokenText}
+                        </Text>
+                      </View>
                     </View>
-                    <View style={styles.takeBadge}>
+
+                    <View>
                       {hasTake ? (
-                        <CheckCircle2 size={16} color="#10B981" />
+                        <View className="flex-row items-center gap-1 bg-resolve-recessed px-1.5 py-0.5 border border-resolve-border rounded-none">
+                          <CheckCircle2 size={11} color="#F26D21" />
+                          <Text className="text-resolve-accent font-mono text-[9px] font-bold">ARMED</Text>
+                        </View>
                       ) : (
-                        <Text style={styles.pendingText}>Pending</Text>
+                        <Text className="text-resolve-dim font-mono text-[9px]">EMPTY</Text>
                       )}
                     </View>
                   </View>
@@ -91,61 +131,81 @@ export function ExportModal({
               })}
             </ScrollView>
 
-            {/* Stitching Progress or Success Result */}
+            {/* Stitching Progress */}
             {isStitching && (
-              <View style={styles.progressContainer}>
-                <View style={styles.progressHeader}>
-                  <Text style={styles.progressLabel}>Concatenating takes with FFmpeg...</Text>
-                  <Text style={styles.progressPercent}>{stitchProgress}%</Text>
+              <View className="p-3 bg-resolve-panel border border-resolve-border rounded-xs mb-3">
+                <View className="flex-row justify-between mb-1.5">
+                  <Text className="text-resolve-text font-mono text-[10px] font-bold uppercase">
+                    RENDERING TIMELINE CONCATENATION...
+                  </Text>
+                  <Text className="text-resolve-accent font-mono text-[10px] font-bold">{stitchProgress}%</Text>
                 </View>
-                <View style={styles.progressBarTrack}>
-                  <View style={[styles.progressBarFill, { width: `${stitchProgress}%` }]} />
+                <View className="w-full h-1.5 bg-resolve-recessed rounded-none overflow-hidden">
+                  <View 
+                    className="h-full bg-resolve-accent" 
+                    style={{ width: `${stitchProgress}%` }} 
+                  />
                 </View>
               </View>
             )}
 
+            {/* Success Result */}
             {finalVideoPath && (
-              <View style={styles.successBox}>
-                <CheckCircle2 size={24} color="#10B981" />
-                <View style={styles.successTextCol}>
-                  <Text style={styles.successTitle}>Video Stitched Cleanly!</Text>
-                  <Text style={styles.successPath} numberOfLines={2}>{finalVideoPath}</Text>
+              <View className="p-3 bg-resolve-panel border border-resolve-accent rounded-xs mb-3 flex-row items-center gap-2">
+                <CheckCircle2 size={16} color="#F26D21" />
+                <View className="flex-1">
+                  <Text className="text-resolve-text text-xs font-bold font-mono uppercase">
+                    RENDER COMPLETE // TIMELINE SAVED
+                  </Text>
+                  <Text className="text-resolve-muted font-mono text-[9px]" numberOfLines={1}>
+                    {finalVideoPath}
+                  </Text>
                 </View>
               </View>
             )}
 
             {errorMessage && (
-              <View style={styles.errorBox}>
-                <Text style={styles.errorText}>{errorMessage}</Text>
+              <View className="p-2.5 bg-resolve-crimson/20 border border-resolve-crimson rounded-xs mb-3">
+                <Text className="text-resolve-crimson font-mono text-[10px]">{errorMessage}</Text>
               </View>
             )}
 
             {/* Actions */}
-            <View style={styles.actionButtonsCol}>
+            <View className="gap-2">
               <TouchableOpacity
-                style={[styles.stitchMainBtn, (isStitching || recordedCount === 0) && styles.btnDisabled]}
+                className={`py-2.5 px-4 rounded-xs items-center justify-center flex-row gap-2 border ${
+                  (isStitching || recordedCount === 0)
+                    ? 'bg-resolve-panel border-resolve-border opacity-40'
+                    : 'bg-resolve-accent border-resolve-accent active:opacity-90'
+                }`}
                 onPress={handleStitch}
                 disabled={isStitching || recordedCount === 0}
+                activeOpacity={0.85}
               >
                 {isStitching ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <ActivityIndicator size="small" color="#000000" />
                 ) : (
                   <>
-                    <Sparkles size={16} color="#FFFFFF" />
-                    <Text style={styles.stitchBtnText}>Stitch All Takes Instantly</Text>
+                    <View className="w-2 h-2 bg-black rounded-none" />
+                    <Text className="text-black font-mono text-xs font-bold uppercase tracking-wider">
+                      RENDER TIMELINE ({recordedCount} TAKES)
+                    </Text>
                   </>
                 )}
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.clearSessionBtn}
+                className="py-2 px-4 rounded-xs border border-resolve-border bg-resolve-recessed items-center justify-center flex-row gap-1.5 active:bg-resolve-panel"
                 onPress={() => {
                   onClearSession();
                   onClose();
                 }}
+                activeOpacity={0.8}
               >
-                <Trash2 size={14} color="#EF4444" />
-                <Text style={styles.clearSessionText}>Reset All Takes</Text>
+                <Trash2 size={12} color="#888888" />
+                <Text className="text-resolve-muted font-mono text-[10px] uppercase tracking-wider">
+                  CLEAR TRACK SESSION
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -155,198 +215,3 @@ export function ExportModal({
     </Modal>
   );
 }
-
-const styles = StyleSheet.create({
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
-    justifyContent: 'center',
-    padding: 16
-  },
-  modalCard: {
-    backgroundColor: '#0F121C',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-    maxHeight: '85%',
-    overflow: 'hidden'
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.08)'
-  },
-  titleGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10
-  },
-  iconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  modalTitle: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700'
-  },
-  modalSubtitle: {
-    color: '#94A3B8',
-    fontSize: 11
-  },
-  closeBtn: {
-    padding: 4
-  },
-  modalBody: {
-    padding: 16,
-    gap: 14
-  },
-  sectionHeading: {
-    color: '#CBD5E1',
-    fontSize: 12,
-    fontWeight: '600'
-  },
-  takesList: {
-    maxHeight: 180
-  },
-  takeItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    padding: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    borderRadius: 8,
-    marginBottom: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)'
-  },
-  takeItemReady: {
-    borderColor: 'rgba(16, 185, 129, 0.3)',
-    backgroundColor: 'rgba(16, 185, 129, 0.08)'
-  },
-  takeNum: {
-    color: '#64748B',
-    fontSize: 12,
-    fontFamily: 'monospace'
-  },
-  takeInfo: {
-    flex: 1
-  },
-  takeSection: {
-    color: '#38BDF8',
-    fontSize: 10,
-    fontWeight: '700'
-  },
-  takeSnippet: {
-    color: '#94A3B8',
-    fontSize: 11
-  },
-  takeBadge: {
-    minWidth: 40,
-    alignItems: 'flex-end'
-  },
-  pendingText: {
-    color: '#64748B',
-    fontSize: 10
-  },
-  progressContainer: {
-    gap: 6
-  },
-  progressHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between'
-  },
-  progressLabel: {
-    color: '#38BDF8',
-    fontSize: 11
-  },
-  progressPercent: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontFamily: 'monospace'
-  },
-  progressBarTrack: {
-    width: '100%',
-    height: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 3,
-    overflow: 'hidden'
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: '#10B981'
-  },
-  successBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.4)',
-    padding: 12,
-    borderRadius: 10
-  },
-  successTextCol: {
-    flex: 1
-  },
-  successTitle: {
-    color: '#10B981',
-    fontSize: 13,
-    fontWeight: '700'
-  },
-  successPath: {
-    color: '#A7F3D0',
-    fontSize: 10,
-    fontFamily: 'monospace'
-  },
-  errorBox: {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
-    padding: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.4)'
-  },
-  errorText: {
-    color: '#F87171',
-    fontSize: 11
-  },
-  actionButtonsCol: {
-    gap: 10,
-    marginTop: 4
-  },
-  stitchMainBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#10B981',
-    paddingVertical: 14,
-    borderRadius: 12
-  },
-  stitchBtnText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700'
-  },
-  clearSessionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 6
-  },
-  clearSessionText: {
-    color: '#EF4444',
-    fontSize: 12
-  },
-  btnDisabled: {
-    opacity: 0.4
-  }
-});
