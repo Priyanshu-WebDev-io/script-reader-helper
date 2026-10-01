@@ -1,67 +1,48 @@
-// Intelligent script parser and voice director analyzer
-
 export const TONE_PROFILES = {
   hook: {
     label: 'High Energy Hook',
     emoji: '⚡️',
-    color: '#ef4444',
-    bg: 'rgba(239, 68, 68, 0.15)',
-    wpmMultiplier: 1.15,
-    coachingTip: 'Punch the first 3 words with maximum presence. Look dead into the lens.'
+    color: '#EF4444',
+    bg: 'rgba(239, 68, 68, 0.25)',
+    coachingTip: 'Punch the first 3 words with maximum energy. Stare dead into the front lens.'
   },
   problem: {
     label: 'Empathetic / Relatable',
     emoji: '🤝',
-    color: '#f59e0b',
-    bg: 'rgba(245, 158, 11, 0.15)',
-    wpmMultiplier: 0.95,
-    coachingTip: 'Slow down slightly. Speak as if talking one-on-one with a trusted friend.'
+    color: '#F59E0B',
+    bg: 'rgba(245, 158, 11, 0.25)',
+    coachingTip: 'Slow down. Speak as if talking one-on-one with a close friend.'
   },
   solution: {
     label: 'Warm & Authoritative',
     emoji: '💡',
-    color: '#06b6d4',
-    bg: 'rgba(6, 182, 212, 0.15)',
-    wpmMultiplier: 1.0,
+    color: '#06B6D4',
+    bg: 'rgba(6, 182, 212, 0.25)',
     coachingTip: 'Clear, steady pitch. Let your vocal authority shine through crisp diction.'
   },
   thoughtful: {
     label: 'Dramatic & Reflective',
     emoji: '🤔',
-    color: '#8b5cf6',
-    bg: 'rgba(139, 92, 246, 0.15)',
-    wpmMultiplier: 0.85,
-    coachingTip: 'Lower your pitch by half an octave. Leave ample room for the pauses.'
-  },
-  climax: {
-    label: 'Urgent & Inspiring',
-    emoji: '🔥',
-    color: '#ec4899',
-    bg: 'rgba(236, 72, 153, 0.15)',
-    wpmMultiplier: 1.1,
-    coachingTip: 'Build vocal momentum. Increase energy toward the final takeaway.'
+    color: '#8B5CF6',
+    bg: 'rgba(139, 92, 246, 0.25)',
+    coachingTip: 'Lower pitch by half an octave. Leave ample room for the pause.'
   },
   cta: {
-    label: 'Friendly Call-to-Action',
+    label: 'Friendly Outro / CTA',
     emoji: '📣',
-    color: '#10b981',
-    bg: 'rgba(16, 185, 129, 0.15)',
-    wpmMultiplier: 1.05,
-    coachingTip: 'Warm smile, upbeat cadence. Make it sound effortless and inviting.'
+    color: '#10B981',
+    bg: 'rgba(16, 185, 129, 0.25)',
+    coachingTip: 'Warm smile, upbeat cadence. Make following feel effortless.'
   },
   default: {
     label: 'Natural & Conversational',
     emoji: '🎙️',
-    color: '#3b82f6',
-    bg: 'rgba(59, 130, 246, 0.15)',
-    wpmMultiplier: 1.0,
-    coachingTip: 'Keep a relaxed, natural cadence. Breathe from your diaphragm.'
+    color: '#3B82F6',
+    bg: 'rgba(59, 130, 246, 0.25)',
+    coachingTip: 'Relaxed cadence. Breathe from your diaphragm.'
   }
 };
 
-/**
- * Infers tone profile based on section tags and keywords
- */
 function inferTone(sectionTag, text, stageCues) {
   const combined = `${sectionTag} ${text} ${stageCues}`.toLowerCase();
 
@@ -71,25 +52,19 @@ function inferTone(sectionTag, text, stageCues) {
   if (/problem|struggle|mistake|pain|frustrat|worst/i.test(combined)) {
     return TONE_PROFILES.problem;
   }
-  if (/solution|here is what|how to|step|secret|truth|rebuilt/i.test(combined)) {
+  if (/solution|here is what|how to|step|truth|notice/i.test(combined)) {
     return TONE_PROFILES.solution;
   }
-  if (/pause|reflect|think|quiet|whisper|truth that nobody|slow down/i.test(combined)) {
+  if (/pause|reflect|think|quiet|whisper|slow down/i.test(combined)) {
     return TONE_PROFILES.thoughtful;
   }
-  if (/climax|important|start now|urgent|remember|power|key/i.test(combined)) {
-    return TONE_PROFILES.climax;
-  }
-  if (/call to action|cta|follow|subscribe|comment|share|save this/i.test(combined)) {
+  if (/call to action|cta|follow|subscribe|comment|share/i.test(combined)) {
     return TONE_PROFILES.cta;
   }
 
   return TONE_PROFILES.default;
 }
 
-/**
- * Extracts pause length from pause tags e.g. [pause 2.0s] or (pause 1s)
- */
 function extractPauseSeconds(text) {
   const match = text.match(/\[pause\s*([\d\.]+)?s?\]|\(pause\s*([\d\.]+)?s?\)/i);
   if (match) {
@@ -99,18 +74,20 @@ function extractPauseSeconds(text) {
   if (text.includes('...') || text.toLowerCase().includes('[pause]')) {
     return 1.0;
   }
-  return 0.5; // natural breath pause between beats
+  return 0.5;
 }
 
-/**
- * Parses raw LLM / written script text into structured beats with director cues
- */
-export function parseScript(rawText, baseWpm = 145) {
+export function parseScript(rawText, wpm = 150) {
   if (!rawText || !rawText.trim()) {
-    return { beats: [], totalWords: 0, estimatedDurationSec: 0 };
+    return {
+      beats: [],
+      totalWords: 0,
+      totalDurationSec: 0,
+      estimatedMinutes: 0,
+      estimatedSeconds: 0
+    };
   }
 
-  // Split raw text into paragraphs / blocks
   const blocks = rawText
     .split(/\n\s*\n/)
     .map(b => b.trim())
@@ -121,15 +98,16 @@ export function parseScript(rawText, baseWpm = 145) {
   let currentSection = 'INTRO';
 
   for (const block of blocks) {
-    // Check if block has a section header tag like [HOOK], [PROBLEM], etc.
     let blockText = block;
+
+    // Detect section headers [HOOK], [PROBLEM], etc.
     const sectionMatch = blockText.match(/^\[([A-Z\s\-_0-9]+)\]/i);
     if (sectionMatch) {
       currentSection = sectionMatch[1].toUpperCase().trim();
       blockText = blockText.replace(/^\[[A-Z\s\-_0-9]+\]/i, '').trim();
     }
 
-    // Extract stage directions in parentheses e.g. (Look directly into the lens)
+    // Extract stage directions in parentheses (look directly into lens)
     const stageCues = [];
     const cueRegex = /\(([^)]+)\)/g;
     let match;
@@ -137,28 +115,26 @@ export function parseScript(rawText, baseWpm = 145) {
       stageCues.push(match[1].trim());
     }
 
-    // Check pause tags
     const pauseSec = extractPauseSeconds(blockText);
 
-    // Clean spoken text: remove [tags], (cues), clean double spaces
+    // Clean spoken text: strip cues, tags, speaker prefixes
     let spokenText = blockText
       .replace(/\[pause[^\]]*\]/gi, '')
       .replace(/\(pause[^\)]*\)/gi, '')
       .replace(/\([^\)]+\)/g, '')
       .replace(/\[[^\]]+\]/g, '')
-      .replace(/^[A-Za-z0-9\s]+:\s*/, '') // Remove speaker labels like "Host: "
+      .replace(/^[A-Za-z0-9\s]+:\s*/, '')
       .replace(/\s+/g, ' ')
       .trim();
 
     if (!spokenText) {
-      // Might be a pure pause block
       if (pauseSec > 0 && beats.length > 0) {
         beats[beats.length - 1].pauseAfterSec = Math.max(beats[beats.length - 1].pauseAfterSec, pauseSec);
       }
       continue;
     }
 
-    // Detect emphasis words (e.g. *word*, **word**, or ALL CAPS words with length >= 3)
+    // Detect emphasis words
     const emphasisWords = [];
     const starMatches = spokenText.match(/\*+([^*]+)\*+/g);
     if (starMatches) {
@@ -173,15 +149,13 @@ export function parseScript(rawText, baseWpm = 145) {
       });
     }
 
-    // Clean stars from spoken text
     spokenText = spokenText.replace(/\*/g, '');
 
-    // Split long blocks into distinct sentences if too long (> 30 words) for bite-sized beats
     const words = spokenText.split(/\s+/).filter(Boolean);
     const wordCount = words.length;
 
     const tone = inferTone(currentSection, spokenText, stageCues.join(' '));
-    const targetWpm = Math.round(baseWpm * tone.wpmMultiplier);
+    const targetWpm = wpm;
     const speakingDurationSec = Math.max(1.5, (wordCount / targetWpm) * 60);
 
     beats.push({
@@ -196,8 +170,7 @@ export function parseScript(rawText, baseWpm = 145) {
       speakingDurationSec: Math.round(speakingDurationSec * 10) / 10,
       pauseAfterSec: pauseSec,
       totalDurationSec: Math.round((speakingDurationSec + pauseSec) * 10) / 10,
-      emphasisWords,
-      coachingTip: tone.coachingTip
+      emphasisWords
     });
   }
 
@@ -211,13 +184,4 @@ export function parseScript(rawText, baseWpm = 145) {
     estimatedMinutes: Math.floor(totalDurationSec / 60),
     estimatedSeconds: totalDurationSec % 60
   };
-}
-
-/**
- * Formats seconds into MM:SS
- */
-export function formatTime(seconds) {
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }

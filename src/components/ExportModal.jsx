@@ -1,274 +1,352 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { 
-  Download, 
-  Play, 
-  Pause, 
-  Trash2, 
-  Film, 
-  Volume2, 
-  Sparkles, 
-  CheckCircle2, 
-  AlertCircle,
-  X,
-  Share2
-} from 'lucide-react';
-import confetti from 'canvas-confetti';
-import { stitchVideoBlobs, downloadBlob } from '../utils/videoStitcher';
+  Modal, 
+  View, 
+  Text, 
+  TouchableOpacity, 
+  ScrollView, 
+  StyleSheet, 
+  ActivityIndicator 
+} from 'react-native';
+import { X, Film, Sparkles, CheckCircle2, Trash2 } from 'lucide-react-native';
+import { stitchTakes } from '../utils/videoStitcher';
 
-export default function ExportModal({
-  isOpen,
+export function ExportModal({
+  visible,
   onClose,
-  mode,
   beats,
-  recordedTakes,
-  continuousBlob,
-  onClearRecordings
+  recordingTakes,
+  onClearSession
 }) {
   const [isStitching, setIsStitching] = useState(false);
   const [stitchProgress, setStitchProgress] = useState(0);
-  const [finalVideoBlob, setFinalVideoBlob] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState('');
-  const [selectedBeatIndex, setSelectedBeatIndex] = useState(null);
-  const videoPlayerRef = useRef(null);
+  const [finalVideoPath, setFinalVideoPath] = useState(null);
+  const [errorMessage, setErrorMessage] = useState(null);
 
-  // Initialize export state when modal opens
-  useEffect(() => {
-    if (!isOpen) {
-      if (previewUrl) {
-        URL.revokeObjectURL(previewUrl);
-        setPreviewUrl('');
-      }
-      setFinalVideoBlob(null);
-      return;
-    }
+  const handleStitch = async () => {
+    setIsStitching(true);
+    setStitchProgress(5);
+    setErrorMessage(null);
 
-    if (mode === 'continuous' && continuousBlob) {
-      setFinalVideoBlob(continuousBlob);
-      const url = URL.createObjectURL(continuousBlob);
-      setPreviewUrl(url);
-    } else if (mode === 'beat') {
-      const takeKeys = Object.keys(recordedTakes);
-      if (takeKeys.length > 0) {
-        // Automatically stitch or prepare first take
-        handleStitchAll();
-      }
-    }
-  }, [isOpen, mode, continuousBlob]);
-
-  const handleStitchAll = async () => {
-    const blobs = [];
-    beats.forEach(beat => {
-      if (recordedTakes[beat.id]) {
-        blobs.push(recordedTakes[beat.id]);
-      }
+    const result = await stitchTakes(recordingTakes, (progress) => {
+      setStitchProgress(progress);
     });
 
-    if (blobs.length === 0) return;
+    setIsStitching(false);
 
-    setIsStitching(true);
-    setStitchProgress(10);
-
-    try {
-      const stitched = await stitchVideoBlobs(blobs, (progress) => {
-        setStitchProgress(progress);
-      });
-
-      setFinalVideoBlob(stitched);
-      const url = URL.createObjectURL(stitched);
-      setPreviewUrl(url);
-
-      // Trigger confetti celebration
-      confetti({
-        particleCount: 75,
-        spread: 70,
-        origin: { y: 0.6 }
-      });
-    } catch (err) {
-      console.error('Stitch error:', err);
-    } finally {
-      setIsStitching(false);
+    if (result.success) {
+      setFinalVideoPath(result.outputPath);
+    } else {
+      setErrorMessage(result.error || 'Failed to stitch takes');
     }
   };
 
-  const handleDownloadVideo = () => {
-    if (!finalVideoBlob) return;
-    const timestamp = new Date().toISOString().slice(0, 10);
-    const filename = `ScriptCast-Video-${timestamp}.webm`;
-    downloadBlob(finalVideoBlob, filename);
-  };
-
-  const handleDownloadAudioOnly = () => {
-    if (!finalVideoBlob) return;
-    const timestamp = new Date().toISOString().slice(0, 10);
-    const filename = `ScriptCast-Audio-${timestamp}.webm`;
-    downloadBlob(finalVideoBlob, filename);
-  };
-
-  const handlePreviewSingleTake = (beat) => {
-    const blob = recordedTakes[beat.id];
-    if (blob) {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-      const url = URL.createObjectURL(blob);
-      setPreviewUrl(url);
-      setSelectedBeatIndex(beat.id);
-    }
-  };
-
-  if (!isOpen) return null;
-
-  const recordedBeatsCount = Object.keys(recordedTakes).length;
+  const recordedCount = recordingTakes.filter(Boolean).length;
 
   return (
-    <div className="modal-backdrop">
-      <div className="modal-dialog glass-panel export-modal">
-        
-        {/* Header */}
-        <div className="modal-header">
-          <div className="modal-title-group">
-            <div className="modal-icon-badge export-badge">
-              <Film size={22} className="text-emerald" />
-            </div>
-            <div>
-              <h2>Review & Export Studio Master</h2>
-              <p>Your clean video & audio with facecam. Prompter overlays are not burned in.</p>
-            </div>
-          </div>
-          <button className="btn-modal-close" onClick={onClose}>
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* Modal Body */}
-        <div className="export-modal-grid">
+    <Modal visible={visible} animationType="slide" transparent>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
           
-          {/* Left: Video Player Preview */}
-          <div className="export-preview-col">
-            <div className="video-player-frame glass-panel">
-              {previewUrl ? (
-                <video
-                  ref={videoPlayerRef}
-                  src={previewUrl}
-                  controls
-                  playsInline
-                  className="export-video-element"
-                />
-              ) : (
-                <div className="video-empty-state">
-                  <Film size={40} className="text-muted" />
-                  <p>No video generated yet.</p>
-                </div>
-              )}
-            </div>
+          {/* Header */}
+          <View style={styles.modalHeader}>
+            <View style={styles.titleGroup}>
+              <View style={styles.iconCircle}>
+                <Film size={20} color="#10B981" />
+              </View>
+              <View>
+                <Text style={styles.modalTitle}>Auto-Stitch & Export Studio</Text>
+                <Text style={styles.modalSubtitle}>Clean video export without prompter overlay.</Text>
+              </View>
+            </View>
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+              <X size={20} color="#94A3B8" />
+            </TouchableOpacity>
+          </View>
 
-            {/* Stitching Progress Bar */}
+          {/* Body */}
+          <View style={styles.modalBody}>
+            {/* Takes status list */}
+            <Text style={styles.sectionHeading}>Takes Ready for Stitching ({recordedCount}/{beats.length})</Text>
+
+            <ScrollView style={styles.takesList} showsVerticalScrollIndicator={false}>
+              {beats.map((beat, index) => {
+                const hasTake = !!recordingTakes[index];
+                return (
+                  <View key={beat.id} style={[styles.takeItem, hasTake && styles.takeItemReady]}>
+                    <Text style={styles.takeNum}>#{index + 1}</Text>
+                    <View style={styles.takeInfo}>
+                      <Text style={styles.takeSection}>{beat.section}</Text>
+                      <Text style={styles.takeSnippet} numberOfLines={1}>{beat.spokenText}</Text>
+                    </View>
+                    <View style={styles.takeBadge}>
+                      {hasTake ? (
+                        <CheckCircle2 size={16} color="#10B981" />
+                      ) : (
+                        <Text style={styles.pendingText}>Pending</Text>
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            {/* Stitching Progress or Success Result */}
             {isStitching && (
-              <div className="stitch-progress-bar">
-                <div className="progress-info">
-                  <span>Stitching clips seamlessly...</span>
-                  <span>{stitchProgress}%</span>
-                </div>
-                <div className="progress-track">
-                  <div className="progress-fill" style={{ width: `${stitchProgress}%` }} />
-                </div>
-              </div>
+              <View style={styles.progressContainer}>
+                <View style={styles.progressHeader}>
+                  <Text style={styles.progressLabel}>Concatenating takes with FFmpeg...</Text>
+                  <Text style={styles.progressPercent}>{stitchProgress}%</Text>
+                </View>
+                <View style={styles.progressBarTrack}>
+                  <View style={[styles.progressBarFill, { width: `${stitchProgress}%` }]} />
+                </View>
+              </View>
             )}
 
-            {/* Download Buttons */}
-            <div className="export-actions-row">
-              <button
-                className="btn-studio-primary export-main-btn"
-                onClick={handleDownloadVideo}
-                disabled={!finalVideoBlob || isStitching}
-              >
-                <Download size={18} />
-                <span>Download Clean Video (WebM/MP4)</span>
-              </button>
-
-              <button
-                className="btn-studio-secondary"
-                onClick={handleDownloadAudioOnly}
-                disabled={!finalVideoBlob || isStitching}
-                title="Download pristine audio track for podcasts or voiceovers"
-              >
-                <Volume2 size={16} />
-                <span>Audio Only</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Right: Takes Breakdown & Clips List */}
-          <div className="export-clips-col glass-panel">
-            <div className="clips-header">
-              <h3>Recorded Takes ({mode === 'beat' ? `${recordedBeatsCount}/${beats.length}` : '1 Take'})</h3>
-              {mode === 'beat' && (
-                <button className="btn-stitch-rebuild" onClick={handleStitchAll} disabled={isStitching}>
-                  <Sparkles size={14} />
-                  <span>Re-Stitch</span>
-                </button>
-              )}
-            </div>
-
-            {mode === 'beat' ? (
-              <div className="clips-list-scroll">
-                {beats.map((beat, idx) => {
-                  const hasTake = !!recordedTakes[beat.id];
-                  return (
-                    <div 
-                      key={beat.id} 
-                      className={`clip-item-card ${hasTake ? 'has-take' : 'missing-take'} ${selectedBeatIndex === beat.id ? 'selected' : ''}`}
-                    >
-                      <div className="clip-num">#{idx + 1}</div>
-                      <div className="clip-info">
-                        <span className="clip-section-tag">{beat.section}</span>
-                        <p className="clip-text">{beat.spokenText}</p>
-                      </div>
-                      <div className="clip-actions">
-                        {hasTake ? (
-                          <button
-                            className="btn-play-clip"
-                            onClick={() => handlePreviewSingleTake(beat)}
-                            title="Preview this take"
-                          >
-                            <Play size={13} fill="#ffffff" />
-                            <span>Preview</span>
-                          </button>
-                        ) : (
-                          <span className="unrecorded-badge">Pending</span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="continuous-take-info">
-                <CheckCircle2 size={32} className="text-emerald" />
-                <h4>Continuous Master Take</h4>
-                <p>Recorded smoothly with live prompter pacing.</p>
-              </div>
+            {finalVideoPath && (
+              <View style={styles.successBox}>
+                <CheckCircle2 size={24} color="#10B981" />
+                <View style={styles.successTextCol}>
+                  <Text style={styles.successTitle}>Video Stitched Cleanly!</Text>
+                  <Text style={styles.successPath} numberOfLines={2}>{finalVideoPath}</Text>
+                </View>
+              </View>
             )}
 
-            {/* Clear All Takes */}
-            <div className="clear-session-row">
-              <button 
-                className="btn-danger-text" 
-                onClick={() => {
-                  if (confirm('Clear all recorded takes and start fresh?')) {
-                    onClearRecordings();
-                    onClose();
-                  }
+            {errorMessage && (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{errorMessage}</Text>
+              </View>
+            )}
+
+            {/* Actions */}
+            <View style={styles.actionButtonsCol}>
+              <TouchableOpacity
+                style={[styles.stitchMainBtn, (isStitching || recordedCount === 0) && styles.btnDisabled]}
+                onPress={handleStitch}
+                disabled={isStitching || recordedCount === 0}
+              >
+                {isStitching ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Sparkles size={16} color="#FFFFFF" />
+                    <Text style={styles.stitchBtnText}>Stitch All Takes Instantly</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.clearSessionBtn}
+                onPress={() => {
+                  onClearSession();
+                  onClose();
                 }}
               >
-                <Trash2 size={14} />
-                <span>Reset All Recordings</span>
-              </button>
-            </div>
+                <Trash2 size={14} color="#EF4444" />
+                <Text style={styles.clearSessionText}>Reset All Takes</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
 
-          </div>
-
-        </div>
-
-      </div>
-    </div>
+        </View>
+      </View>
+    </Modal>
   );
 }
+
+const styles = StyleSheet.create({
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    justifyContent: 'center',
+    padding: 16
+  },
+  modalCard: {
+    backgroundColor: '#0F121C',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    maxHeight: '85%',
+    overflow: 'hidden'
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.08)'
+  },
+  titleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
+  },
+  iconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  modalTitle: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700'
+  },
+  modalSubtitle: {
+    color: '#94A3B8',
+    fontSize: 11
+  },
+  closeBtn: {
+    padding: 4
+  },
+  modalBody: {
+    padding: 16,
+    gap: 14
+  },
+  sectionHeading: {
+    color: '#CBD5E1',
+    fontSize: 12,
+    fontWeight: '600'
+  },
+  takesList: {
+    maxHeight: 180
+  },
+  takeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderRadius: 8,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)'
+  },
+  takeItemReady: {
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+    backgroundColor: 'rgba(16, 185, 129, 0.08)'
+  },
+  takeNum: {
+    color: '#64748B',
+    fontSize: 12,
+    fontFamily: 'monospace'
+  },
+  takeInfo: {
+    flex: 1
+  },
+  takeSection: {
+    color: '#38BDF8',
+    fontSize: 10,
+    fontWeight: '700'
+  },
+  takeSnippet: {
+    color: '#94A3B8',
+    fontSize: 11
+  },
+  takeBadge: {
+    minWidth: 40,
+    alignItems: 'flex-end'
+  },
+  pendingText: {
+    color: '#64748B',
+    fontSize: 10
+  },
+  progressContainer: {
+    gap: 6
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between'
+  },
+  progressLabel: {
+    color: '#38BDF8',
+    fontSize: 11
+  },
+  progressPercent: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontFamily: 'monospace'
+  },
+  progressBarTrack: {
+    width: '100%',
+    height: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 3,
+    overflow: 'hidden'
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#10B981'
+  },
+  successBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.4)',
+    padding: 12,
+    borderRadius: 10
+  },
+  successTextCol: {
+    flex: 1
+  },
+  successTitle: {
+    color: '#10B981',
+    fontSize: 13,
+    fontWeight: '700'
+  },
+  successPath: {
+    color: '#A7F3D0',
+    fontSize: 10,
+    fontFamily: 'monospace'
+  },
+  errorBox: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.4)'
+  },
+  errorText: {
+    color: '#F87171',
+    fontSize: 11
+  },
+  actionButtonsCol: {
+    gap: 10,
+    marginTop: 4
+  },
+  stitchMainBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#10B981',
+    paddingVertical: 14,
+    borderRadius: 12
+  },
+  stitchBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700'
+  },
+  clearSessionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 6
+  },
+  clearSessionText: {
+    color: '#EF4444',
+    fontSize: 12
+  },
+  btnDisabled: {
+    opacity: 0.4
+  }
+});
