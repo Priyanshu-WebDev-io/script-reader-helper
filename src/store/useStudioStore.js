@@ -1,8 +1,7 @@
 import { create } from 'zustand';
 import { createMMKV } from 'react-native-mmkv';
 import { parseScript } from '../utils/scriptParser';
-import { loadScriptFromInput } from '../utils/scriptLoaderEngine';
-import { SAMPLE_SCRIPTS } from '../utils/sampleScripts';
+import { loadScriptFromInput, validateAndParseJsonScript } from '../utils/scriptLoaderEngine';
 
 let mmkvStorage = null;
 try {
@@ -21,29 +20,31 @@ try {
   // ignore
 }
 
-let initialScripts = SAMPLE_SCRIPTS;
+let initialScripts = [];
 try {
   const storedScripts = mmkvStorage?.getString('savedScripts');
   if (storedScripts) {
     const parsedStored = JSON.parse(storedScripts);
-    if (Array.isArray(parsedStored) && parsedStored.length > 0) {
-      initialScripts = parsedStored;
+    if (Array.isArray(parsedStored)) {
+      // Purge any legacy sample templates
+      initialScripts = parsedStored.filter(s => s && s.id !== 'shorts-hook' && s.id !== 'tech-review' && !s.title?.includes('Viral Short') && !s.title?.includes('Tech Breakdown'));
+      mmkvStorage?.set('savedScripts', JSON.stringify(initialScripts));
     }
   }
 } catch (e) {
   // ignore
 }
 
-const initialPreset = initialScripts[0] || SAMPLE_SCRIPTS[0];
-const initialParsed = initialPreset.parsedInfo || parseScript(initialPreset.rawText, initialPreset.defaultWpm || 150);
+const initialPreset = initialScripts[0] || null;
+const initialParsed = initialPreset ? (initialPreset.parsedInfo || parseScript(initialPreset.rawText, initialPreset.defaultWpm || 150)) : null;
 
 export const useStudioStore = create((set, get) => ({
   scripts: initialScripts,
   currentScript: initialPreset,
-  beats: initialPreset.beats || initialParsed.beats,
+  beats: initialPreset ? (initialPreset.beats || initialParsed?.beats || []) : [],
   parsedInfo: initialParsed,
   currentBeatIndex: 0,
-  wpm: initialPreset.defaultWpm || 150,
+  wpm: initialPreset?.defaultWpm || 150,
 
   savedVideos: initialSavedVideos,
   recordingTakes: [],
@@ -70,52 +71,134 @@ export const useStudioStore = create((set, get) => ({
     } catch (e) {}
   },
 
-  setScript: (rawTextOrJson, title = 'Custom LLM Script') => {
+  deleteScript: (id) => {
+    const { scripts, currentScript } = get();
+    const updated = (scripts || []).filter(s => s.id !== id);
+    const nextCurrent = currentScript?.id === id ? (updated[0] || null) : currentScript;
+    set({ 
+      scripts: updated,
+      currentScript: nextCurrent,
+      beats: nextCurrent?.beats || [],
+      parsedInfo: nextCurrent?.parsedInfo || null
+    });
+    try {
+      mmkvStorage?.set('savedScripts', JSON.stringify(updated));
+    } catch (e) {}
+  },
+
+  setFreeRecordingMode: () => {
+    const freeScript = {
+      id: `free-${Date.now()}`,
+      title: 'Free Recording Session',
+      category: 'Free Form',
+      defaultWpm: 150,
+      targetDuration: '0s',
+      rawText: '',
+      beats: [
+        {
+          id: 'free-take-1',
+          beatNumber: 1,
+          section: 'FREE RECORD',
+          spokenText: '',
+          stageCues: 'Free recording • Teleprompter disarmed',
+          tone: { label: 'Free', emoji: '🎬', color: '#DEDEDE', bg: '#222222' },
+          wordCount: 0,
+          targetWpm: 150,
+          speakingDurationSec: 0,
+          pauseAfterSec: 0,
+          totalDurationSec: 0,
+          emphasisWords: []
+        }
+      ],
+      parsedInfo: {
+        beats: [],
+        totalWords: 0,
+        totalDurationSec: 0,
+        estimatedMinutes: 0,
+        estimatedSeconds: 0
+      }
+    };
+    set({
+      currentScript: freeScript,
+      beats: freeScript.beats,
+      parsedInfo: freeScript.parsedInfo,
+      currentBeatIndex: 0,
+      recordingTakes: [],
+      recordingStage: 'idle',
+      elapsedSeconds: 0
+    });
+  },
+
+  setScript: (rawTextOrJsonOrObj, title = '') => {
     const { wpm, scripts } = get();
-    const result = loadScriptFromInput(rawTextOrJson, wpm);
 
-    if (result.success) {
-      const updatedScript = {
-        ...result.script,
-        title: title || result.script.title
+    let updatedScript = null;
+
+    if (rawTextOrJsonOrObj && typeof rawTextOrJsonOrObj === 'object' && Array.isArray(rawTextOrJsonOrObj.beats)) {
+      // Direct script object passed
+      updatedScript = {
+        ...rawTextOrJsonOrObj,
+        title: title || rawTextOrJsonOrObj.title || 'Untitled Script'
       };
-
-      const existingIdx = (scripts || []).findIndex(s => s.id === updatedScript.id);
-      let updatedScriptsList = [...(scripts || [])];
-      if (existingIdx >= 0) {
-        updatedScriptsList[existingIdx] = updatedScript;
+    } else if (typeof rawTextOrJsonOrObj === 'string') {
+      // Try strict JSON parser first
+      const jsonRes = validateAndParseJsonScript(rawTextOrJsonOrObj, wpm, title);
+      if (jsonRes.valid) {
+        updatedScript = jsonRes.script;
       } else {
-        updatedScriptsList = [updatedScript, ...(scripts || [])];
+        const fallbackRes = loadScriptFromInput(rawTextOrJsonOrObj, wpm);
+        if (fallbackRes.success) {
+          updatedScript = {
+            ...fallbackRes.script,
+            title: title || fallbackRes.script.title
+          };
+        } else {
+          return { success: false, error: jsonRes.error || fallbackRes.error };
+        }
       }
-
-      set({
-        scripts: updatedScriptsList,
-        currentScript: updatedScript,
-        beats: updatedScript.beats,
-        parsedInfo: updatedScript.parsedInfo,
-        wpm: updatedScript.defaultWpm || wpm,
-        currentBeatIndex: 0,
-        recordingTakes: [],
-        recordingStage: 'idle',
-        elapsedSeconds: 0
-      });
-
-      try {
-        mmkvStorage?.set('savedScripts', JSON.stringify(updatedScriptsList));
-        mmkvStorage?.set('lastScript', rawTextOrJson);
-      } catch (e) {
-        // ignore
-      }
-
-      return { success: true, script: updatedScript };
     } else {
-      return { success: false, error: result.error };
+      return { success: false, error: 'Invalid script format' };
     }
+
+    if (title && title.trim()) {
+      updatedScript.title = title.trim();
+    }
+
+    const existingIdx = (scripts || []).findIndex(s => s.id === updatedScript.id);
+    let updatedScriptsList = [...(scripts || [])];
+    if (existingIdx >= 0) {
+      updatedScriptsList[existingIdx] = updatedScript;
+    } else {
+      updatedScriptsList = [updatedScript, ...(scripts || [])];
+    }
+
+    set({
+      scripts: updatedScriptsList,
+      currentScript: updatedScript,
+      beats: updatedScript.beats,
+      parsedInfo: updatedScript.parsedInfo,
+      wpm: updatedScript.defaultWpm || wpm,
+      currentBeatIndex: 0,
+      recordingTakes: [],
+      recordingStage: 'idle',
+      elapsedSeconds: 0
+    });
+
+    try {
+      mmkvStorage?.set('savedScripts', JSON.stringify(updatedScriptsList));
+      if (typeof rawTextOrJsonOrObj === 'string') {
+        mmkvStorage?.set('lastScript', rawTextOrJsonOrObj);
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    return { success: true, script: updatedScript };
   },
 
   loadPresetScript: (presetId) => {
     const { scripts, wpm } = get();
-    const script = (scripts || []).find(s => s.id === presetId) || SAMPLE_SCRIPTS.find(s => s.id === presetId) || (scripts && scripts[0]);
+    const script = (scripts || []).find(s => s.id === presetId) || (scripts && scripts[0]) || null;
     if (script) {
       const parsed = script.parsedInfo || parseScript(script.rawText, script.defaultWpm || wpm);
       set({

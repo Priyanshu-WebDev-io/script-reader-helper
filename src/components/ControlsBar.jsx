@@ -51,7 +51,7 @@ export function ControlsBar({
           <Text className={`text-[11px] font-semibold uppercase tracking-wider ${
             recordedCount > 0 ? 'text-resolve-accent' : 'text-resolve-muted'
           }`}>
-            RENDER TIMELINE ({recordedCount}/{totalBeats})
+            RENDER TIMELINE ({totalBeats > 1 ? `${recordedCount}/${totalBeats}` : recordedCount})
           </Text>
         </TouchableOpacity>
       </View>
@@ -62,10 +62,10 @@ export function ControlsBar({
         {/* Previous Beat (Jog Step Backward) */}
         <TouchableOpacity
           className={`w-11 h-11 bg-resolve-panel border border-resolve-border rounded-xs items-center justify-center active:bg-resolve-border ${
-            (currentBeatIndex === 0 || isRecording) ? 'opacity-30' : ''
+            (currentBeatIndex === 0 || isRecording || totalBeats <= 1) ? 'opacity-30' : ''
           }`}
           onPress={onPrevious}
-          disabled={currentBeatIndex === 0 || isRecording}
+          disabled={currentBeatIndex === 0 || isRecording || totalBeats <= 1}
           activeOpacity={0.7}
         >
           <ChevronLeft size={18} color="#DEDEDE" />
@@ -80,7 +80,7 @@ export function ControlsBar({
           >
             <View className="w-2.5 h-2.5 bg-white rounded-none" />
             <Text className="text-white text-xs font-bold uppercase tracking-wider font-mono">
-              RECORD TAKE {currentBeatIndex + 1}/{totalBeats}
+              {totalBeats > 1 ? `RECORD TAKE ${currentBeatIndex + 1}/${totalBeats}` : 'RECORD'}
             </Text>
           </TouchableOpacity>
         ) : (

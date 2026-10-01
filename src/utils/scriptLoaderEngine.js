@@ -161,6 +161,143 @@ export function extractJsonCandidate(rawInput) {
   return null;
 }
 
+export function validateAndParseJsonScript(rawInput, defaultWpm = 150, userAssignedTitle = '') {
+  if (!rawInput || typeof rawInput !== 'string' || !rawInput.trim()) {
+    return {
+      valid: false,
+      error: 'No JSON content provided. Please select a .json file or paste JSON text.',
+      errors: ['No JSON content provided.'],
+      script: null,
+      detectedTitle: '',
+      beatsCount: 0,
+      totalDurationSec: 0,
+      totalWords: 0
+    };
+  }
+
+  const trimmed = rawInput.trim();
+  const jsonCandidate = extractJsonCandidate(trimmed);
+
+  if (!jsonCandidate) {
+    return {
+      valid: false,
+      error: 'Only JSON format is accepted. Please provide a valid JSON object starting with { and ending with }.',
+      errors: ['Format error: Input is not a JSON object.'],
+      script: null,
+      detectedTitle: '',
+      beatsCount: 0,
+      totalDurationSec: 0,
+      totalWords: 0
+    };
+  }
+
+  let parsedData;
+  try {
+    parsedData = JSON.parse(jsonCandidate);
+  } catch (err) {
+    return {
+      valid: false,
+      error: `JSON Syntax Error: ${err.message}`,
+      errors: [`JSON Syntax Error: ${err.message}`],
+      script: null,
+      detectedTitle: '',
+      beatsCount: 0,
+      totalDurationSec: 0,
+      totalWords: 0
+    };
+  }
+
+  if (!parsedData || typeof parsedData !== 'object' || Array.isArray(parsedData)) {
+    return {
+      valid: false,
+      error: 'Script root must be a JSON object {...}',
+      errors: ['Script root must be a JSON object {...}'],
+      script: null,
+      detectedTitle: '',
+      beatsCount: 0,
+      totalDurationSec: 0,
+      totalWords: 0
+    };
+  }
+
+  // Support alternative beat array keys (beats, scenes, blocks, takes)
+  const rawBeats = parsedData.beats || parsedData.scenes || parsedData.blocks || parsedData.takes;
+
+  if (!Array.isArray(rawBeats) || rawBeats.length === 0) {
+    return {
+      valid: false,
+      error: 'Missing or empty "beats" array in JSON. Script must contain at least one beat.',
+      errors: ['Missing or empty "beats" array in JSON.'],
+      script: null,
+      detectedTitle: parsedData.title || '',
+      beatsCount: 0,
+      totalDurationSec: 0,
+      totalWords: 0
+    };
+  }
+
+  // Validate individual beats
+  const errors = [];
+  rawBeats.forEach((b, index) => {
+    if (!b || typeof b !== 'object') {
+      errors.push(`Beat #${index + 1} must be an object.`);
+      return;
+    }
+    const spoken = b.spokenText || b.text || b.script || b.speech || b.content;
+    if (!spoken || typeof spoken !== 'string' || !spoken.trim()) {
+      errors.push(`Beat #${index + 1} is missing spoken dialogue text.`);
+    }
+  });
+
+  if (errors.length > 0) {
+    return {
+      valid: false,
+      error: errors.join('; '),
+      errors,
+      script: null,
+      detectedTitle: parsedData.title || '',
+      beatsCount: rawBeats.length,
+      totalDurationSec: 0,
+      totalWords: 0
+    };
+  }
+
+  // Auto-name: use custom title if provided, otherwise detected title, otherwise generate one
+  const detectedTitle = (typeof parsedData.title === 'string' && parsedData.title.trim()) 
+    ? parsedData.title.trim() 
+    : '';
+
+  const finalTitle = (userAssignedTitle && userAssignedTitle.trim())
+    ? userAssignedTitle.trim()
+    : (detectedTitle || `Script - ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+
+  // Prepare normalized JSON
+  const normalizedData = {
+    ...parsedData,
+    title: finalTitle,
+    beats: rawBeats.map((b, idx) => ({
+      ...b,
+      id: b.id || `beat-${idx + 1}`,
+      section: (b.section || `PART ${idx + 1}`).toUpperCase().trim(),
+      spokenText: (b.spokenText || b.text || b.script || b.speech || b.content || '').trim()
+    }))
+  };
+
+  const script = normalizeJsonScript(normalizedData, defaultWpm);
+  script.title = finalTitle;
+
+  return {
+    valid: true,
+    error: null,
+    errors: [],
+    script,
+    detectedTitle,
+    beatsCount: script.beats.length,
+    totalDurationSec: script.parsedInfo.totalDurationSec,
+    totalWords: script.parsedInfo.totalWords
+  };
+}
+
 export function loadScriptFromInput(input, defaultWpm = 150) {
   if (!input || typeof input !== 'string' || !input.trim()) {
     return {
@@ -260,116 +397,4 @@ export function exportScriptToJson(script) {
   return JSON.stringify(exportObj, null, 2);
 }
 
-/**
- * Generates an empty starter JSON template ready for editing
- */
-export function getStarterJsonTemplate() {
-  return JSON.stringify({
-    title: "My Short Form Video",
-    category: "Shorts",
-    targetWpm: 150,
-    beats: [
-      {
-        id: "beat-1",
-        section: "HOOK",
-        spokenText: "Stop scrolling, because this one technique changes how you communicate forever.",
-        cues: "Look directly into the lens, lean forward",
-        tone: "hook",
-        pauseAfterSec: 1.2,
-        emphasisWords: ["Stop", "technique", "forever"]
-      },
-      {
-        id: "beat-2",
-        section: "PROBLEM",
-        spokenText: "Most creators rush their delivery when nervous, losing viewer attention in the first three seconds.",
-        cues: "Conversational, subtle head nod",
-        tone: "problem",
-        pauseAfterSec: 1.0,
-        emphasisWords: ["rush", "losing"]
-      },
-      {
-        id: "beat-3",
-        section: "SOLUTION",
-        spokenText: "Lower your pitch by half an octave, pace your words at 150 WPM, and embrace deliberate pauses.",
-        cues: "Confident posture, articulate delivery",
-        tone: "solution",
-        pauseAfterSec: 1.0,
-        emphasisWords: ["Lower", "pace", "deliberate pauses"]
-      },
-      {
-        id: "beat-4",
-        section: "CTA",
-        spokenText: "Follow for daily video creation tips and save this for your next recording session.",
-        cues: "Warm smile, friendly sign-off",
-        tone: "cta",
-        pauseAfterSec: 1.5,
-        emphasisWords: ["Follow", "save"]
-      }
-    ]
-  }, null, 2);
-}
 
-/**
- * Generates ready-to-use LLM prompt instructions
- */
-export function getLLMPromptTemplate(topic = 'Explain Quantum Computing in simple terms', durationSec = 60, wpm = 150) {
-  return `Act as an expert viral video copywriter and teleprompter coach.
-Create a structured short-form video script for the app "ScriptCast Studio".
-
-Topic: "${topic}"
-Target Duration: ~${durationSec} seconds
-Target Pace: ${wpm} Words Per Minute
-
-YOU MUST OUTPUT ONLY VALID RAW JSON (no markdown formatting, no commentary).
-Use this exact JSON schema:
-
-{
-  "title": "Title of the Video",
-  "category": "Educational",
-  "targetWpm": ${wpm},
-  "beats": [
-    {
-      "id": "beat-1",
-      "section": "HOOK",
-      "spokenText": "The exact words the creator speaks out loud.",
-      "cues": "Stage direction for eye-contact, gesture, or emotion (e.g. Lean in, look into lens)",
-      "tone": "hook",
-      "pauseAfterSec": 1.2,
-      "emphasisWords": ["exact", "words"]
-    },
-    {
-      "id": "beat-2",
-      "section": "PROBLEM",
-      "spokenText": "The struggle or misconception being addressed.",
-      "cues": "Conversational, subtle head nod",
-      "tone": "problem",
-      "pauseAfterSec": 1.0,
-      "emphasisWords": ["struggle"]
-    },
-    {
-      "id": "beat-3",
-      "section": "SOLUTION",
-      "spokenText": "The key insight, breakthrough, or takeaway.",
-      "cues": "Upright posture, clear delivery",
-      "tone": "solution",
-      "pauseAfterSec": 1.0,
-      "emphasisWords": ["key", "insight"]
-    },
-    {
-      "id": "beat-4",
-      "section": "CTA",
-      "spokenText": "Follow for daily deep dives and drop your thoughts below.",
-      "cues": "Friendly smile, wave",
-      "tone": "cta",
-      "pauseAfterSec": 1.5,
-      "emphasisWords": ["Follow", "below"]
-    }
-  ]
-}
-
-Rules for JSON:
-1. Tone must be one of: "hook", "problem", "solution", "thoughtful", "cta", or "default".
-2. Break long paragraphs into distinct beats (1 to 3 sentences per beat).
-3. "pauseAfterSec" is the pause between takes (typically 0.8 to 1.5 seconds).
-4. "emphasisWords" are key words to emphasize on the teleprompter screen.`;
-}

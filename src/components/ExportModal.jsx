@@ -5,7 +5,8 @@ import {
   Text, 
   TouchableOpacity, 
   ScrollView, 
-  ActivityIndicator 
+  ActivityIndicator,
+  useWindowDimensions
 } from 'react-native';
 import { X, Film, CheckCircle2, Trash2 } from 'lucide-react-native';
 import { stitchTakes } from '../utils/videoStitcher';
@@ -18,6 +19,10 @@ export function ExportModal({
   recordingTakes = [],
   onClearSession
 }) {
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const modalWidth = Math.min(windowWidth - 28, 520);
+  const modalHeight = Math.min(windowHeight * 0.85, 620);
+
   const { currentScript, addSavedVideo } = useStudioStore();
   const [isStitching, setIsStitching] = useState(false);
   const [stitchProgress, setStitchProgress] = useState(0);
@@ -54,10 +59,13 @@ export function ExportModal({
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
-      <View className="flex-1 bg-black/80 justify-center p-4">
-        <View className="bg-resolve-bg border border-resolve-border rounded-xs max-h-[88%] overflow-hidden">
+      <View className="flex-1 bg-black/80 items-center justify-center p-3">
+        <View 
+          className="bg-resolve-bg border border-resolve-border rounded-xs overflow-hidden flex-col"
+          style={{ width: modalWidth, height: modalHeight }}
+        >
 
-          {/* DaVinci Resolve Deliver Header */}
+          {/* Studio Deliver Header */}
           <View className="flex-row justify-between items-center px-4 py-3 bg-resolve-header border-b border-resolve-border">
             <View className="flex-row items-center gap-2">
               <View className="w-6 h-6 bg-resolve-panel border border-resolve-border rounded-xs items-center justify-center">
@@ -65,7 +73,7 @@ export function ExportModal({
               </View>
               <View>
                 <Text className="text-resolve-text text-xs font-bold uppercase tracking-wider font-mono">
-                  DELIVER // TIMELINE RENDER
+                  STUDIO // TIMELINE RENDER
                 </Text>
                 <Text className="text-resolve-muted text-[10px] tracking-tight">
                   Clean native stream concatenation without HUD burn-in
@@ -78,7 +86,7 @@ export function ExportModal({
           </View>
 
           {/* Body */}
-          <View className="p-4">
+          <View className="p-4 flex-1 justify-between">
             <View className="flex-row justify-between items-center mb-2">
               <Text className="text-resolve-muted font-mono text-[10px] font-bold uppercase tracking-wider">
                 TRACK CLIPS ({recordedCount}/{beats.length} ARMED)
@@ -88,7 +96,12 @@ export function ExportModal({
               </Text>
             </View>
 
-            <ScrollView className="max-h-56 mb-3" showsVerticalScrollIndicator={false}>
+            <ScrollView 
+              style={{ flex: 1 }}
+              contentContainerStyle={{ flexGrow: 1 }}
+              className="mb-3" 
+              showsVerticalScrollIndicator={false}
+            >
               {beats.map((beat, index) => {
                 const hasTake = !!recordingTakes[index];
                 return (

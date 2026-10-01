@@ -68,7 +68,17 @@ export function StudioScreen({ onExit }) {
     clearTakes
   } = useStudioStore();
 
-  const currentBeat = beats[currentBeatIndex] || null;
+  const currentBeat = beats[currentBeatIndex] || {
+    id: 'free-take',
+    beatNumber: 1,
+    section: 'FREE RECORD',
+    spokenText: '',
+    stageCues: 'Free recording • Teleprompter disarmed',
+    speakingDurationSec: 0,
+    pauseAfterSec: 0,
+    wordCount: 0,
+    targetWpm: 150
+  };
   const recordedCount = recordingTakes.filter(Boolean).length;
 
   // Request native camera & mic permissions
@@ -162,7 +172,7 @@ export function StudioScreen({ onExit }) {
           setElapsedSeconds(elapsed);
 
           // Transition to pause cue if specified in beat
-          if (elapsed >= currentBeat.speakingDurationSec && recordingStage !== 'paused') {
+          if (currentBeat.speakingDurationSec > 0 && elapsed >= currentBeat.speakingDurationSec && recordingStage !== 'paused') {
             if (currentBeat.pauseAfterSec > 0.5) {
               setRecordingStage('paused');
             }
@@ -195,7 +205,7 @@ export function StudioScreen({ onExit }) {
             <View className="w-3 h-3 bg-resolve-accent" />
           </View>
           <Text className="text-resolve-text text-xs font-bold uppercase tracking-wider mb-1 font-mono">
-            RESOLVE MONITOR // SOURCE FEED
+            STUDIO MONITOR // SOURCE FEED
           </Text>
           <Text className="text-resolve-muted text-[11px] text-center max-w-[260px] font-mono leading-4">
             {hasPermission 

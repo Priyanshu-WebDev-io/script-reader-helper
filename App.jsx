@@ -9,6 +9,7 @@ import { useStudioStore } from './src/store/useStudioStore';
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('gallery'); // 'gallery' | 'studio'
   const [isScriptModalOpen, setIsScriptModalOpen] = useState(false);
+  const [scriptModalMode, setScriptModalMode] = useState('import'); // 'import' | 'record'
 
   const {
     currentScript,
@@ -17,13 +18,25 @@ export default function App() {
     setWpm
   } = useStudioStore();
 
+  const handleOpenScriptEditor = (mode = 'import') => {
+    setScriptModalMode(mode);
+    setIsScriptModalOpen(true);
+  };
+
+  const handleSaveScript = (rawText, title) => {
+    setScript(rawText, title);
+    if (scriptModalMode === 'record') {
+      setCurrentScreen('studio');
+    }
+  };
+
   return (
     <SafeAreaProvider>
       <View className="flex-1 bg-resolve-bg">
         {currentScreen === 'gallery' ? (
           <GalleryScreen
             onStartNewRecording={() => setCurrentScreen('studio')}
-            onOpenScriptEditor={() => setIsScriptModalOpen(true)}
+            onOpenScriptEditor={handleOpenScriptEditor}
           />
         ) : (
           <StudioScreen
@@ -36,7 +49,11 @@ export default function App() {
           onClose={() => setIsScriptModalOpen(false)}
           currentScript={currentScript}
           wpm={wpm}
-          onSaveScript={(rawText, title) => setScript(rawText, title)}
+          mode={scriptModalMode}
+          onSaveScript={handleSaveScript}
+          onConfirmRecord={() => {
+            setCurrentScreen('studio');
+          }}
           onWpmChange={(newWpm) => setWpm(newWpm)}
         />
       </View>
