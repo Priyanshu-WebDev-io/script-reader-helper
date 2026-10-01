@@ -13,7 +13,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Video,
   FileText,
-  Plus,
   Film,
   Trash2,
   FolderOpen,
@@ -126,7 +125,7 @@ export function GalleryScreen({ onStartNewRecording, onOpenScriptEditor }) {
             </View>
           </View>
 
-          {/* INSPECTOR PANEL (Advanced details, hidden by default) */}
+          {/* INSPECTOR PANEL */}
           {isExpanded && (
             <View className="bg-resolve-recessed border-t border-resolve-border p-3">
               <View className="flex-row items-center justify-between mb-2">
@@ -227,7 +226,7 @@ export function GalleryScreen({ onStartNewRecording, onOpenScriptEditor }) {
           </View>
         </View>
 
-        {/* INSPECTOR PANEL (Advanced details, hidden by default) */}
+        {/* INSPECTOR PANEL */}
         {isExpanded && (
           <View className="bg-resolve-recessed border-t border-resolve-border p-3">
             <View className="flex-row items-center justify-between mb-2">
@@ -309,7 +308,6 @@ export function GalleryScreen({ onStartNewRecording, onOpenScriptEditor }) {
 
       {/* Top Header - STUDIO */}
       <View className="bg-resolve-header border-b border-resolve-border px-4 py-2.5 flex-row items-center justify-between z-30">
-
         {/* LEFT CORNER: Branding & Title */}
         <View className="flex-row items-center gap-2">
           <View className="w-2.5 h-2.5 bg-resolve-accent rounded-none" />
@@ -330,18 +328,21 @@ export function GalleryScreen({ onStartNewRecording, onOpenScriptEditor }) {
             ALL MEDIA ({displayedItems.length})
           </Text>
         </View>
-
       </View>
 
-      {/* List */}
+      {/* List - Using contentContainerStyle to ensure the empty state centers vertically */}
       <FlatList
         data={displayedItems}
         keyExtractor={(item) => `${item.type}-${item.id}`}
         renderItem={renderItem}
-        contentContainerStyle={{ padding: 12, paddingBottom: 95 }}
+        contentContainerStyle={{
+          padding: 12,
+          paddingBottom: 110, // Increased padding to avoid the button 
+          flexGrow: 1 // Required to center ListEmptyComponent
+        }}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
-          <View className="items-center justify-center py-20 px-6">
+          <View className="flex-1 items-center justify-center px-6">
             <View className="w-12 h-12 bg-resolve-panel border border-resolve-border rounded-xs items-center justify-center mb-3">
               <Film size={22} color="#555555" />
             </View>
@@ -355,10 +356,10 @@ export function GalleryScreen({ onStartNewRecording, onOpenScriptEditor }) {
         }
       />
 
-      {/* Bottom Sticky Action: RECORD */}
-      <View className="absolute bottom-0 left-0 right-0 p-3 bg-resolve-header/95 border-t border-resolve-border">
+      {/* Bottom Sticky Action: RECORD (Nudged upwards) */}
+      <View className="absolute bottom-6 left-3 right-3 bg-resolve-header/95 border border-resolve-border rounded-xs p-2 shadow-lg">
         <TouchableOpacity
-          className="flex-row items-center justify-center gap-2.5 bg-resolve-crimson border border-resolve-crimsonDark rounded-xs py-3 px-4 active:opacity-90 shadow-lg"
+          className="flex-row items-center justify-center gap-2.5 bg-resolve-crimson border border-resolve-crimsonDark rounded-xs py-3 px-4 active:opacity-90"
           activeOpacity={0.85}
           onPress={() => setIsRecordModalOpen(true)}
         >

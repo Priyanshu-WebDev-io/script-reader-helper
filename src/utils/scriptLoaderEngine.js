@@ -10,6 +10,105 @@ import { parseScript, TONE_PROFILES } from './scriptParser';
  */
 
 /**
+ * Standard Prompt and Formatting Instructions for LLMs (ChatGPT, Claude, Gemini, etc.)
+ */
+export const LLM_PROMPT_INSTRUCTIONS = `Act as an expert video teleprompter scriptwriter. Generate a high-retention video script strictly formatted as a valid JSON object matching this specification:
+
+{
+  "title": "Title of the Video",
+  "category": "Education / Tech / Productivity / Business",
+  "targetWpm": 150,
+  "beats": [
+    {
+      "section": "HOOK",
+      "spokenText": "Did you know that 90% of creators quit right before seeing results?",
+      "cues": "Direct eye contact, high energy",
+      "tone": "hook",
+      "pauseAfterSec": 1.0,
+      "emphasisWords": ["90%", "QUIT"]
+    },
+    {
+      "section": "PROBLEM",
+      "spokenText": "They get overwhelmed by long scripts when short, punchy takes work much better.",
+      "cues": "Slight lean forward, conversational and relatable",
+      "tone": "problem",
+      "pauseAfterSec": 0.8,
+      "emphasisWords": ["OVERWHELMED", "PUNCHY"]
+    },
+    {
+      "section": "SOLUTION",
+      "spokenText": "Here is the simple method: record your video take-by-take, one punchy thought at a time.",
+      "cues": "Crisp diction, confident nod",
+      "tone": "solution",
+      "pauseAfterSec": 1.0,
+      "emphasisWords": ["METHOD", "ONE TAKE"]
+    },
+    {
+      "section": "CTA",
+      "spokenText": "Save this script for your next shoot and follow for more creator workflows.",
+      "cues": "Warm smile, gesture down",
+      "tone": "cta",
+      "pauseAfterSec": 0.5
+    }
+  ]
+}
+
+STRICT JSON SCHEMA & RULES:
+1. OUTPUT: Return ONLY the JSON object (or wrapped inside a \`\`\`json ... \`\`\` code block). Do NOT include introductory greetings or concluding conversational remarks.
+2. "title": Short, catchy script title (string).
+3. "category": Topic classification (string, e.g. "Tech", "Business", "Productivity").
+4. "targetWpm": Desired reading pace in words per minute (number: 120-180, default 150).
+5. "beats": Array of scenes/takes. Each beat represents a single teleprompter take.
+6. "section": Section header (e.g. "HOOK", "PROBLEM", "SOLUTION", "STEP 1", "STEP 2", "CTA").
+7. "spokenText": (REQUIRED) The exact words to be read on the teleprompter. Keep each beat concise (10-35 words).
+8. "cues": (Optional) Stage directions or camera cues (e.g. "Direct eye contact", "Smile", "Pause").
+9. "tone": (Optional) Tone preset name: "hook" (⚡️ High Energy), "problem" (🤝 Empathetic), "solution" (💡 Authoritative), "thoughtful" (🤔 Dramatic Pause), "cta" (📣 Friendly Call to Action), or "default" (🎙️ Conversational).
+10. "pauseAfterSec": (Optional) Seconds of pause after completing this take (number, e.g. 0.5 to 1.5).
+11. "emphasisWords": (Optional) Array of words from spokenText to visually highlight for vocal punch.`;
+
+/**
+ * Clean JSON Template for LLM Scripting
+ */
+export const LLM_JSON_TEMPLATE = `{
+  "title": "My Video Script",
+  "category": "General",
+  "targetWpm": 150,
+  "beats": [
+    {
+      "section": "HOOK",
+      "spokenText": "Punchy opening sentence to hook your audience in the first 3 seconds.",
+      "cues": "Direct eye contact, high energy",
+      "tone": "hook",
+      "pauseAfterSec": 1.0,
+      "emphasisWords": ["HOOK", "FIRST 3 SECONDS"]
+    },
+    {
+      "section": "PROBLEM",
+      "spokenText": "Describe the core challenge or struggle your viewer faces.",
+      "cues": "Conversational, empathetic tone",
+      "tone": "problem",
+      "pauseAfterSec": 0.8
+    },
+    {
+      "section": "SOLUTION",
+      "spokenText": "Deliver the actionable solution or key insight clearly and confidently.",
+      "cues": "Warm smile, confident delivery",
+      "tone": "solution",
+      "pauseAfterSec": 1.0,
+      "emphasisWords": ["ACTIONABLE", "CONFIDENTLY"]
+    },
+    {
+      "section": "CTA",
+      "spokenText": "Call to action: follow, like, or save for later.",
+      "cues": "Friendly nod",
+      "tone": "cta",
+      "pauseAfterSec": 0.5
+    }
+  ]
+}`;
+
+
+/**
  * Validates whether an object complies with the ScriptCast JSON specification
  */
 export function validateScriptSchema(data) {

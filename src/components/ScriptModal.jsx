@@ -6,35 +6,39 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  Share,
   Alert,
   ActivityIndicator,
   useWindowDimensions,
   LayoutAnimation,
   Platform,
-  UIManager
+  UIManager,
+  NativeModules,
+  PermissionsAndroid,
+  Clipboard
 } from 'react-native';
 import {
   X,
   ChevronDown,
   ChevronUp,
   FileCode,
-  RefreshCw,
-  FolderOpen,
   Minus,
   Plus,
-  Share2,
-  HardDrive,
   Sliders,
   Check,
-  Sparkles,
   FileCheck2,
-  AlertTriangle
+  AlertTriangle,
+  ArrowRight,
+  Upload,
+  FileUp,
+  Copy,
+  CopyCheck
 } from 'lucide-react-native';
-import RNFS from 'react-native-fs';
-import { validateAndParseJsonScript } from '../utils/scriptLoaderEngine';
+import {
+  validateAndParseJsonScript,
+  LLM_PROMPT_INSTRUCTIONS
+} from '../utils/scriptLoaderEngine';
 
-// Enable LayoutAnimation on Android for smooth Inspector expansion
+// Enable LayoutAnimation on Android for smooth UI transitions
 if (
   Platform.OS === 'android' &&
   UIManager.setLayoutAnimationEnabledExperimental
@@ -61,85 +65,81 @@ function ScriptModalInner({
   const modalWidth = Math.min(windowWidth - 28, 520);
   const modalHeight = Math.min(windowHeight * 0.88, 660);
 
-  // 'file' | 'paste'
-  const [importMethod, setImportMethod] = useState('file');
-
-  // Collapsible Inspector state
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  const [scriptTitle, setScriptTitle] = useState(currentScript?.title || '');
+  // Content State
   const [scriptInput, setScriptInput] = useState('');
   const [selectedFileName, setSelectedFileName] = useState('');
+  const [scriptTitle, setScriptTitle] = useState(currentScript?.title || '');
   const [currentWpm, setCurrentWpm] = useState(wpm || 150);
-
-  // Device JSON files scanning
-  const [deviceFiles, setDeviceFiles] = useState([]);
-  const [isScanning, setIsScanning] = useState(false);
-  const [manualPath, setManualPath] = useState('');
+  const [isPicking, setIsPicking] = useState(false);
 
   const toggleInspector = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setIsInspectorOpen(!isInspectorOpen);
   };
 
-  // Strictly scan for .json files only
-  const scanDeviceFiles = async () => {
-    setIsScanning(true);
-    const searchDirs = [
-      RNFS.DownloadDirectoryPath,
-      RNFS.DocumentDirectoryPath,
-      RNFS.ExternalStorageDirectoryPath ? `${RNFS.ExternalStorageDirectoryPath}/Download` : null
-    ].filter(Boolean);
-
-    const found = [];
-    const seenPaths = new Set();
-
-    for (const dir of searchDirs) {
-      try {
-        const exists = await RNFS.exists(dir);
-        if (exists) {
-          const items = await RNFS.readDir(dir);
-          for (const item of items) {
-            if (item.isFile() && !seenPaths.has(item.path)) {
-              const lowerName = item.name.toLowerCase();
-              if (lowerName.endsWith('.json')) {
-                seenPaths.add(item.path);
-                found.push({
-                  name: item.name,
-                  path: item.path,
-                  size: item.size
-                });
-              }
-            }
-          }
-        }
-      } catch (e) {
-        // directory access restricted or unavailable
-      }
+  const handleCopyPrompt = () => {
+    try {
+      Clipboard.setString(LLM_PROMPT_INSTRUCTIONS);
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setCopied(true);
+      setTimeout(() => {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setCopied(false);
+      }, 3000);
+    } catch (err) {
+      Alert.alert('Clipboard Error', 'Could not copy instructions to clipboard.');
     }
-
-    setDeviceFiles(found);
-    setIsScanning(false);
   };
 
-  useEffect(() => {
-    scanDeviceFiles();
-  }, []);
-
-  const handleSelectFile = async (filePath, fileName) => {
-    try {
-      const content = await RNFS.readFile(filePath, 'utf8');
-      setScriptInput(content);
-      const cleanFileName = fileName || filePath.split('/').pop();
-      setSelectedFileName(cleanFileName);
-
-      // Auto-name: use filename base unless user already typed a custom title
-      const baseName = cleanFileName.replace(/\.json$/i, '');
-      if (!scriptTitle || scriptTitle === 'Custom Script') {
-        setScriptTitle(baseName);
+  // Request storage permissions if needed on Android
+  const requestStoragePermissionIfNeeded = async () => {
+    if (Platform.OS === 'android' && Platform.Version < 33) {
+      try {
+        const granted = await PermissionsAndroid.requestMultiple([
+          PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+          PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
+        ]);
+        return (
+          granted[PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE] === PermissionsAndroid.RESULTS.GRANTED
+        );
+      } catch (err) {
+        console.warn('Storage permission request error:', err);
       }
-    } catch (e) {
-      Alert.alert('Read Error', `Unable to read JSON file: ${e.message}`);
+    }
+    return true;
+  };
+
+  // Upload JSON File via native document picker
+  const handleUploadFile = async () => {
+    try {
+      setIsPicking(true);
+      await requestStoragePermissionIfNeeded();
+
+      if (NativeModules.JsonPicker) {
+        const result = await NativeModules.JsonPicker.pickJsonFile();
+        if (result && result.content) {
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+          setScriptInput(result.content);
+          setSelectedFileName(result.name || 'script.json');
+
+          // Auto-name: use filename base unless user already typed a custom title
+          const baseName = (result.name || '').replace(/\.json$/i, '');
+          if (!scriptTitle || scriptTitle === 'Untitled Recording' || scriptTitle === 'Custom Script') {
+            setScriptTitle(baseName);
+          }
+        }
+      } else {
+        Alert.alert('File Picker', 'Native file picker module is unavailable.');
+      }
+    } catch (err) {
+      if (err.code !== 'E_CANCELLED') {
+        Alert.alert('Upload Error', err.message || 'Could not load selected file.');
+      }
+    } finally {
+      setIsPicking(false);
     }
   };
 
@@ -149,7 +149,6 @@ function ScriptModalInner({
       return {
         valid: false,
         error: 'No JSON content loaded.',
-        errors: [],
         script: null,
         detectedTitle: '',
         beatsCount: 0,
@@ -168,10 +167,10 @@ function ScriptModalInner({
 
   // Auto-fill title from JSON if available and title is currently empty
   useEffect(() => {
-    if (scanResult.detectedTitle && !scriptTitle) {
+    if (isValid && scanResult.detectedTitle && !scriptTitle) {
       setScriptTitle(scanResult.detectedTitle);
     }
-  }, [scanResult.detectedTitle, scriptTitle]);
+  }, [isValid, scanResult.detectedTitle, scriptTitle]);
 
   const handleAdjustWpm = (delta) => {
     const nextWpm = Math.max(100, Math.min(220, currentWpm + delta));
@@ -180,12 +179,9 @@ function ScriptModalInner({
   };
 
   const handleSaveAndConfirm = () => {
-    if (!isValid) {
-      Alert.alert('Invalid Script', scanResult.error || 'Please provide a valid JSON script.');
-      return;
-    }
+    if (!isValid) return;
 
-    const finalTitle = (scriptTitle.trim() || scanResult.detectedTitle || 'Custom Script').trim();
+    const finalTitle = scriptTitle.trim() || scanResult.detectedTitle || 'Untitled Script';
 
     if (onSaveScript) {
       onSaveScript(scriptInput, finalTitle);
@@ -200,32 +196,55 @@ function ScriptModalInner({
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
-      <View className="flex-1 bg-black/80 items-center justify-center p-3">
+      <View className="flex-1 bg-black/85 items-center justify-center p-3">
         <View
           className="bg-resolve-bg border border-resolve-border rounded-xs overflow-hidden flex-col shadow-2xl"
           style={{ width: modalWidth, height: modalHeight }}
         >
-
-          {/* STUDIO Header */}
+          {/* Header */}
           <View className="flex-row justify-between items-center px-4 py-2.5 bg-resolve-header border-b border-resolve-border z-30">
             <View className="flex-row items-center gap-2">
               <View className="w-2.5 h-2.5 bg-resolve-accent rounded-none" />
               <View>
                 <Text className="text-resolve-text text-xs font-bold uppercase tracking-wider font-mono">
-                  STUDIO // IMPORT SCRIPT
+                  {mode === 'record' ? 'ARM RECORDING' : 'IMPORT MEDIA'}
                 </Text>
                 <Text className="text-resolve-muted text-[9px] tracking-tight font-mono uppercase">
-                  JSON MEDIA INGEST & SCANNER
+                  JSON SCRIPT INGEST
                 </Text>
               </View>
             </View>
 
-            <TouchableOpacity
-              onPress={onClose}
-              className="p-1 bg-resolve-recessed border border-resolve-border rounded-xs active:opacity-70"
-            >
-              <X size={14} color="#888888" />
-            </TouchableOpacity>
+            {/* Single Header Copy Button + Close */}
+            <View className="flex-row items-center gap-2">
+              <TouchableOpacity
+                onPress={handleCopyPrompt}
+                className={`px-2.5 py-1 rounded-xs border flex-row items-center gap-1.5 active:opacity-75 ${copied
+                  ? 'bg-[#152418] border-[#22c55e]'
+                  : 'bg-resolve-recessed border-resolve-border active:border-resolve-accent'
+                  }`}
+                activeOpacity={0.7}
+              >
+                {copied ? (
+                  <>
+                    <CopyCheck size={11} color="#4ade80" />
+                    <Text className="text-[#4ade80] text-[9px] font-mono font-bold uppercase tracking-wider">
+                      COPIED!
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <Copy size={11} color="#F26D21" />
+                    <Text className="text-resolve-accent text-[9px] font-mono font-bold uppercase tracking-wider">
+                      COPY LLM FORMAT
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity onPress={onClose} className="p-1 active:bg-resolve-recessed rounded-xs">
+                <X size={16} color="#888888" />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <ScrollView
@@ -233,201 +252,151 @@ function ScriptModalInner({
             contentContainerStyle={{ flexGrow: 1 }}
             showsVerticalScrollIndicator={false}
           >
-            {/* Script Name & Auto-Name Option */}
-            <View className="px-4 py-2.5 bg-resolve-bg border-b border-resolve-border">
-              <View className="flex-row items-center justify-between mb-1">
-                <Text className="text-resolve-muted font-mono text-[9px] font-bold uppercase">
-                  SCRIPT NAME
-                </Text>
-                {scanResult.detectedTitle && scriptTitle !== scanResult.detectedTitle && (
-                  <TouchableOpacity
-                    onPress={() => setScriptTitle(scanResult.detectedTitle)}
-                    className="flex-row items-center gap-1 active:opacity-70"
-                  >
-                    <Sparkles size={10} color="#F26D21" />
-                    <Text className="text-resolve-accent font-mono text-[9px] uppercase font-bold">
-                      USE DETECTED TITLE
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-              <TextInput
-                className="bg-resolve-recessed text-resolve-text border border-resolve-border rounded-xs px-2.5 py-1.5 text-xs font-mono"
-                value={scriptTitle}
-                onChangeText={setScriptTitle}
-                placeholder={scanResult.detectedTitle || "Name your script..."}
-                placeholderTextColor="#555555"
-              />
-            </View>
+            {/* Unified Ingest Area: Upload Section + Paste Section */}
+            <View className="p-3 bg-resolve-bg flex-1 gap-3.5">
+              {/* Section 1: Upload JSON File */}
+              <View>
+                <View className="flex-row items-center gap-1.5 mb-2">
+                  <Upload size={12} color="#F26D21" />
+                  <Text className="text-resolve-text font-mono text-[10px] font-bold uppercase tracking-wider">
+                    UPLOAD JSON FILE
+                  </Text>
+                </View>
 
-            {/* Input Format Selector: Only JSON File (.json) or JSON Text */}
-            <View className="flex-row bg-resolve-recessed border-b border-resolve-border px-2">
-              <TouchableOpacity
-                className={`px-4 py-2 border-b-2 flex-row items-center gap-1.5 ${importMethod === 'file' ? 'border-resolve-accent bg-resolve-panel' : 'border-transparent'
-                  }`}
-                onPress={() => setImportMethod('file')}
-              >
-                <HardDrive size={11} color={importMethod === 'file' ? '#F26D21' : '#888888'} />
-                <Text className={`text-[10px] font-bold uppercase tracking-wider font-mono ${importMethod === 'file' ? 'text-resolve-text' : 'text-resolve-muted'
-                  }`}>
-                  JSON FILE (.JSON)
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                className={`px-4 py-2 border-b-2 flex-row items-center gap-1.5 ${importMethod === 'paste' ? 'border-resolve-accent bg-resolve-panel' : 'border-transparent'
-                  }`}
-                onPress={() => setImportMethod('paste')}
-              >
-                <FileCode size={11} color={importMethod === 'paste' ? '#F26D21' : '#888888'} />
-                <Text className={`text-[10px] font-bold uppercase tracking-wider font-mono ${importMethod === 'paste' ? 'text-resolve-text' : 'text-resolve-muted'
-                  }`}>
-                  PASTE JSON TEXT
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Source Content Area */}
-            <View className="p-3 bg-resolve-bg">
-              {importMethod === 'file' ? (
-                <View>
-                  {/* Selected File Badge */}
-                  {selectedFileName ? (
-                    <View className="bg-resolve-panel border border-resolve-accent rounded-xs p-2.5 mb-2.5 flex-row items-center justify-between">
-                      <View className="flex-row items-center gap-2 flex-1 mr-2">
-                        <FileCode size={14} color="#F26D21" />
-                        <View className="flex-1">
-                          <Text className="text-resolve-text font-mono text-xs font-bold" numberOfLines={1}>
-                            {selectedFileName}
-                          </Text>
-                          <Text className="text-resolve-accent font-mono text-[9px] uppercase tracking-wider mt-0.5">
-                            {isValid ? `LOADED • ${beats.length} BEATS` : 'SCANNING JSON FILE...'}
-                          </Text>
-                        </View>
+                {/* Selected File Badge */}
+                {selectedFileName ? (
+                  <View className="bg-resolve-panel border border-resolve-accent rounded-xs p-3 mb-2 flex-row items-center justify-between">
+                    <View className="flex-row items-center gap-2 flex-1 mr-2">
+                      <FileCode size={16} color="#F26D21" />
+                      <View className="flex-1">
+                        <Text className="text-resolve-text font-mono text-xs font-bold" numberOfLines={1}>
+                          {selectedFileName}
+                        </Text>
+                        <Text className="text-resolve-accent font-mono text-[9px] uppercase tracking-wider mt-0.5">
+                          {isValid ? `✓ READY • ${beats.length} TAKES LOADED` : 'SCANNING FILE...'}
+                        </Text>
                       </View>
-                      <TouchableOpacity
-                        className="bg-resolve-recessed border border-resolve-border px-2 py-1 rounded-xs"
-                        onPress={() => {
-                          setSelectedFileName('');
-                          setScriptInput('');
-                        }}
-                      >
-                        <Text className="text-resolve-muted font-mono text-[9px] uppercase font-bold">CLEAR</Text>
-                      </TouchableOpacity>
                     </View>
-                  ) : null}
-
-                  {/* Device JSON Files Header */}
-                  <View className="flex-row items-center justify-between mb-2 px-1">
-                    <Text className="text-resolve-muted font-mono text-[9px] font-bold uppercase">
-                      DETECTED JSON FILES ({deviceFiles.length})
-                    </Text>
                     <TouchableOpacity
-                      className="flex-row items-center gap-1 bg-resolve-recessed border border-resolve-border px-1.5 py-0.5 rounded-xs"
-                      onPress={scanDeviceFiles}
-                      disabled={isScanning}
-                    >
-                      {isScanning ? (
-                        <ActivityIndicator size={10} color="#888888" />
-                      ) : (
-                        <RefreshCw size={10} color="#888888" />
-                      )}
-                      <Text className="text-resolve-text font-mono text-[9px] uppercase font-bold">RESCAN</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* Scanned JSON Files List */}
-                  <ScrollView className="max-h-40 mb-2" showsVerticalScrollIndicator={false}>
-                    {deviceFiles.length === 0 ? (
-                      <View className="bg-resolve-recessed border border-resolve-border rounded-xs p-4 items-center justify-center">
-                        <FolderOpen size={16} color="#555555" />
-                        <Text className="text-resolve-muted font-mono text-[10px] mt-1.5 text-center">
-                          No .json files found in Downloads/Documents.
-                        </Text>
-                        <Text className="text-resolve-dim font-mono text-[9px] text-center mt-0.5">
-                          Paste JSON directly or use path override below.
-                        </Text>
-                      </View>
-                    ) : (
-                      deviceFiles.map((file, idx) => (
-                        <TouchableOpacity
-                          key={file.path || idx}
-                          className={`flex-row items-center justify-between p-2 mb-1.5 rounded-xs border ${selectedFileName === file.name
-                            ? 'bg-resolve-panel border-resolve-accent'
-                            : 'bg-resolve-panel border-resolve-border active:bg-resolve-recessed'
-                            }`}
-                          onPress={() => handleSelectFile(file.path, file.name)}
-                          activeOpacity={0.7}
-                        >
-                          <View className="flex-row items-center gap-2 flex-1 mr-2">
-                            <FileCode size={12} color={selectedFileName === file.name ? '#F26D21' : '#888888'} />
-                            <View className="flex-1">
-                              <Text className="text-resolve-text font-mono text-[11px] font-bold" numberOfLines={1}>
-                                {file.name}
-                              </Text>
-                              <Text className="text-resolve-muted font-mono text-[9px]">
-                                {Math.round((file.size || 0) / 1024)} KB • JSON
-                              </Text>
-                            </View>
-                          </View>
-                          {selectedFileName === file.name && (
-                            <Text className="text-resolve-accent font-mono text-[9px] font-bold uppercase">SELECTED</Text>
-                          )}
-                        </TouchableOpacity>
-                      ))
-                    )}
-                  </ScrollView>
-
-                  {/* Manual Path Override for .json */}
-                  <View className="bg-resolve-panel border border-resolve-border rounded-xs p-2 flex-row items-center gap-2">
-                    <TextInput
-                      className="flex-1 bg-resolve-recessed text-resolve-text border border-resolve-border rounded-xs px-2 py-1 text-[10px] font-mono"
-                      value={manualPath}
-                      onChangeText={setManualPath}
-                      placeholder="/sdcard/Download/script.json"
-                      placeholderTextColor="#555555"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                    />
-                    <TouchableOpacity
-                      className="bg-resolve-recessed border border-resolve-border px-2.5 py-1 rounded-xs active:bg-resolve-border"
+                      className="bg-resolve-recessed border border-resolve-border px-2.5 py-1 rounded-xs"
                       onPress={() => {
-                        if (manualPath.trim()) handleSelectFile(manualPath.trim(), manualPath.trim().split('/').pop());
+                        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                        setSelectedFileName('');
+                        setScriptInput('');
                       }}
                     >
-                      <Text className="text-resolve-text font-mono text-[9px] font-bold uppercase">LOAD</Text>
+                      <Text className="text-resolve-muted font-mono text-[9px] uppercase font-bold">CLEAR</Text>
                     </TouchableOpacity>
                   </View>
+                ) : null}
+
+                {/* Clean Upload Button */}
+                <TouchableOpacity
+                  className="border-2 border-dashed border-resolve-border rounded-xs p-5 items-center justify-center bg-resolve-panel/60 active:border-resolve-accent active:bg-resolve-panel"
+                  onPress={handleUploadFile}
+                  disabled={isPicking}
+                  activeOpacity={0.8}
+                >
+                  <View className="w-10 h-10 rounded-xs bg-resolve-recessed border border-resolve-border items-center justify-center mb-2">
+                    {isPicking ? (
+                      <ActivityIndicator size={18} color="#F26D21" />
+                    ) : (
+                      <FileUp size={20} color="#F26D21" />
+                    )}
+                  </View>
+                  <Text className="text-resolve-text font-mono text-xs font-bold uppercase tracking-wider mb-0.5">
+                    {isPicking ? 'OPENING FILE PICKER...' : 'SELECT .JSON SCRIPT'}
+                  </Text>
+                  <Text className="text-resolve-muted font-mono text-[9px] text-center max-w-[260px]">
+                    Choose a structured .json script file from your device storage.
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Divider with OR */}
+              <View className="flex-row items-center gap-2 my-0.5">
+                <View className="h-px bg-resolve-border flex-1" />
+                <Text className="text-resolve-muted font-mono text-[9px] uppercase font-bold tracking-wider">
+                  OR PASTE CONTENT
+                </Text>
+                <View className="h-px bg-resolve-border flex-1" />
+              </View>
+
+              {/* Section 2: Paste Content */}
+              <View>
+                <View className="flex-row items-center gap-1.5 mb-2">
+                  <FileCode size={12} color="#F26D21" />
+                  <Text className="text-resolve-text font-mono text-[10px] font-bold uppercase tracking-wider">
+                    PASTE JSON SCRIPT
+                  </Text>
                 </View>
-              ) : (
-                /* Paste JSON Text Area */
-                <View>
-                  <TextInput
-                    className="w-full bg-resolve-recessed text-resolve-text border border-resolve-border rounded-xs p-2.5 font-mono text-xs leading-5 min-h-[140px] max-h-[180px]"
-                    multiline
-                    value={scriptInput}
-                    onChangeText={setScriptInput}
-                    placeholder={`{\n  "title": "My Video Script",\n  "beats": [\n    {\n      "section": "HOOK",\n      "spokenText": "Did you know this one camera technique?"\n    }\n  ]\n}`}
-                    placeholderTextColor="#444444"
-                    textAlignVertical="top"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                </View>
-              )}
+
+                {/* Pasted content badge */}
+                {scriptInput && !selectedFileName ? (
+                  <View className="bg-resolve-panel border border-resolve-accent rounded-xs p-3 mb-2 flex-row items-center justify-between">
+                    <View className="flex-row items-center gap-2 flex-1 mr-2">
+                      <FileCode size={16} color="#F26D21" />
+                      <View className="flex-1">
+                        <Text className="text-resolve-text font-mono text-xs font-bold" numberOfLines={1}>
+                          Clipboard Content
+                        </Text>
+                        <Text className="text-resolve-accent font-mono text-[9px] uppercase tracking-wider mt-0.5">
+                          {isValid ? `✓ READY • ${beats.length} TAKES LOADED` : 'SCANNING...'}
+                        </Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      className="bg-resolve-recessed border border-resolve-border px-2.5 py-1 rounded-xs"
+                      onPress={() => {
+                        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                        setScriptInput('');
+                      }}
+                    >
+                      <Text className="text-resolve-muted font-mono text-[9px] uppercase font-bold">CLEAR</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+
+                {/* Paste Button */}
+                <TouchableOpacity
+                  className="border-2 border-dashed border-resolve-border rounded-xs p-5 items-center justify-center bg-resolve-panel/60 active:border-resolve-accent active:bg-resolve-panel"
+                  onPress={async () => {
+                    try {
+                      const text = await Clipboard.getString();
+                      if (!text || !text.trim()) {
+                        Alert.alert('Clipboard Empty', 'Nothing found in clipboard. Copy your JSON script first.');
+                        return;
+                      }
+                      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                      setScriptInput(text);
+                      setSelectedFileName('');
+                    } catch (err) {
+                      Alert.alert('Clipboard Error', 'Could not read from clipboard.');
+                    }
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <View className="w-10 h-10 rounded-xs bg-resolve-recessed border border-resolve-border items-center justify-center mb-2">
+                    <FileCode size={20} color="#F26D21" />
+                  </View>
+                  <Text className="text-resolve-text font-mono text-xs font-bold uppercase tracking-wider mb-0.5">
+                    PASTE FROM CLIPBOARD
+                  </Text>
+                  <Text className="text-resolve-muted font-mono text-[9px] text-center max-w-[260px]">
+                    Tap to paste your LLM-generated JSON script from clipboard.
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
-            {/* =========================================================
-                REAL-TIME SCAN & VALIDATION STATUS BANNER
-            ========================================================= */}
-            <View className={`mx-3 mb-3 p-3 rounded-xs border ${
-              !scriptInput.trim()
-                ? 'bg-resolve-recessed border-resolve-border'
-                : isValid
-                  ? 'bg-[#152418] border-[#22c55e]/60'
-                  : 'bg-[#291414] border-resolve-crimson/70'
-            }`}>
-              <View className="flex-row items-center justify-between mb-1">
+            {/* Real-time Scanner Status Banner */}
+            <View className={`mx-3 mb-3 p-2.5 rounded-xs border ${!scriptInput.trim()
+              ? 'bg-resolve-recessed border-resolve-border'
+              : isValid
+                ? 'bg-[#152418] border-[#22c55e]/60'
+                : 'bg-[#291414] border-resolve-crimson/70'
+              }`}>
+              <View className="flex-row items-center justify-between">
                 <View className="flex-row items-center gap-1.5">
                   {isValid ? (
                     <FileCheck2 size={13} color="#22c55e" />
@@ -436,15 +405,14 @@ function ScriptModalInner({
                   ) : (
                     <AlertTriangle size={13} color="#C73B3B" />
                   )}
-                  <Text className={`font-mono text-[10px] font-bold uppercase tracking-wider ${
-                    !scriptInput.trim()
-                      ? 'text-resolve-muted'
-                      : isValid
-                        ? 'text-[#4ade80]'
-                        : 'text-resolve-crimson'
-                  }`}>
+                  <Text className={`font-mono text-[10px] font-bold uppercase tracking-wider ${!scriptInput.trim()
+                    ? 'text-resolve-muted'
+                    : isValid
+                      ? 'text-[#4ade80]'
+                      : 'text-resolve-crimson'
+                    }`}>
                     {!scriptInput.trim()
-                      ? 'JSON SCANNER STANDBY'
+                      ? 'SCANNER STANDBY'
                       : isValid
                         ? '✓ VALID JSON SCRIPT'
                         : '✕ INVALID JSON SCRIPT'}
@@ -452,159 +420,119 @@ function ScriptModalInner({
                 </View>
                 {isValid && (
                   <Text className="text-resolve-text font-mono text-[9px] uppercase tracking-wider">
-                    {beats.length} {beats.length === 1 ? 'TAKE' : 'TAKES'} • ~{totalDurationSec}s
+                    {beats.length} {beats.length === 1 ? 'TAKE' : 'TAKES'} • {totalWords} WDS
                   </Text>
                 )}
               </View>
-
-              <Text className={`font-mono text-[10px] leading-4 ${
-                !scriptInput.trim()
-                  ? 'text-resolve-muted'
-                  : isValid
-                    ? 'text-resolve-text'
-                    : 'text-[#fca5a5]'
-              }`}>
-                {!scriptInput.trim()
-                  ? 'Select a .json file or paste JSON text to scan schema.'
-                  : isValid
-                    ? `Verified schema: ${beats.length} takes ready (${totalWords} words total).`
-                    : scanResult.error}
-              </Text>
+              {!isValid && scriptInput.trim() ? (
+                <Text className="text-[#fca5a5] font-mono text-[10px] mt-1.5 leading-4">
+                  {scanResult.error}
+                </Text>
+              ) : null}
             </View>
 
-            {/* =========================================================
-                ADVANCED INSPECTOR (Collapsible)
-            ========================================================= */}
-            <View className="mt-auto">
-              <TouchableOpacity
-                onPress={toggleInspector}
-                activeOpacity={0.8}
-                className="flex-row justify-between items-center bg-resolve-panel border-t border-resolve-border px-4 py-2"
-              >
-                <View className="flex-row items-center gap-1.5">
-                  <Sliders size={11} color="#888888" />
-                  <Text className="text-resolve-muted font-mono text-[10px] font-bold uppercase tracking-wider">
-                    METADATA INSPECTOR & TIMELINE
+            {/* Step 2: Naming (Progressive Disclosure - Visible when Valid) */}
+            {isValid && (
+              <View className="mx-3 mb-3 bg-resolve-panel border border-resolve-accent/50 rounded-xs overflow-hidden">
+                <View className="bg-resolve-accent/10 px-3 py-2 flex-row justify-between items-center border-b border-resolve-accent/30">
+                  <Text className="text-resolve-accent font-mono text-[10px] font-bold uppercase tracking-wider">
+                    SCRIPT METADATA
+                  </Text>
+                  <TouchableOpacity onPress={handleSaveAndConfirm} className="flex-row items-center gap-1 active:opacity-60">
+                    <Text className="text-resolve-text font-mono text-[9px] uppercase">SKIP NAMING</Text>
+                    <ArrowRight size={10} color="#DEDEDE" />
+                  </TouchableOpacity>
+                </View>
+                <View className="p-3">
+                  <Text className="text-resolve-muted font-mono text-[9px] uppercase mb-1.5">
+                    SCRIPT NAME
+                  </Text>
+                  <TextInput
+                    className="bg-resolve-recessed text-resolve-text border border-resolve-border rounded-xs px-2.5 py-2 text-xs font-mono"
+                    value={scriptTitle}
+                    onChangeText={setScriptTitle}
+                    placeholder={scanResult.detectedTitle || "Name your script..."}
+                    placeholderTextColor="#555555"
+                  />
+                  <Text className="text-resolve-muted font-mono text-[8px] mt-1.5">
+                    Auto-detected from JSON schema. You can edit it or leave it as is.
                   </Text>
                 </View>
-                {isInspectorOpen ? <ChevronUp size={14} color="#888888" /> : <ChevronDown size={14} color="#888888" />}
-              </TouchableOpacity>
+              </View>
+            )}
 
-              {isInspectorOpen && (
-                <View className="bg-resolve-recessed border-t border-resolve-border p-3">
-                  {/* Pacing Controller */}
-                  <View className="bg-resolve-panel border border-resolve-border rounded-xs p-2.5 mb-2.5">
-                    <View className="flex-row items-center justify-between mb-1.5">
-                      <Text className="text-resolve-text font-mono text-[10px] font-bold uppercase">
-                        PACING CONTROL
-                      </Text>
-                      <Text className="text-resolve-accent font-mono text-[10px] font-bold">
-                        {currentWpm} WPM (~{totalDurationSec}s DUR)
-                      </Text>
-                    </View>
-                    <View className="flex-row items-center justify-between">
-                      <Text className="text-resolve-muted text-[9px] font-mono">
-                        Adjust reading speed for prompter auto-scroll
-                      </Text>
-                      <View className="flex-row items-center gap-1.5 bg-resolve-recessed border border-resolve-border rounded-xs px-2 py-1">
-                        <TouchableOpacity className="p-0.5 active:opacity-60" onPress={() => handleAdjustWpm(-10)}>
+            {/* Timeline Inspector (Collapsible) */}
+            {isValid && (
+              <View className="mt-auto">
+                <TouchableOpacity
+                  onPress={toggleInspector}
+                  activeOpacity={0.8}
+                  className="flex-row justify-between items-center bg-resolve-panel border-t border-resolve-border px-4 py-2"
+                >
+                  <View className="flex-row items-center gap-1.5">
+                    <Sliders size={11} color="#888888" />
+                    <Text className="text-resolve-muted font-mono text-[10px] font-bold uppercase tracking-wider">
+                      TIMELINE INSPECTOR
+                    </Text>
+                  </View>
+                  {isInspectorOpen ? <ChevronUp size={14} color="#888888" /> : <ChevronDown size={14} color="#888888" />}
+                </TouchableOpacity>
+
+                {isInspectorOpen && (
+                  <View className="bg-resolve-recessed border-t border-resolve-border p-3">
+                    <View className="bg-resolve-panel border border-resolve-border rounded-xs p-2.5 mb-2.5 flex-row justify-between items-center">
+                      <View>
+                        <Text className="text-resolve-text font-mono text-[10px] font-bold uppercase">PACING CONTROL</Text>
+                        <Text className="text-resolve-muted text-[9px] font-mono mt-0.5">EST. DUR: ~{totalDurationSec}s</Text>
+                      </View>
+                      <View className="flex-row items-center gap-1 bg-resolve-recessed border border-resolve-border rounded-xs px-1.5 py-0.5">
+                        <TouchableOpacity className="p-1 active:opacity-60" onPress={() => handleAdjustWpm(-10)}>
                           <Minus size={11} color="#DEDEDE" />
                         </TouchableOpacity>
-                        <Text className="text-resolve-text font-mono text-xs font-bold w-8 text-center">
-                          {currentWpm}
-                        </Text>
-                        <TouchableOpacity className="p-0.5 active:opacity-60" onPress={() => handleAdjustWpm(10)}>
+                        <Text className="text-resolve-accent font-mono text-xs font-bold w-8 text-center">{currentWpm}</Text>
+                        <TouchableOpacity className="p-1 active:opacity-60" onPress={() => handleAdjustWpm(10)}>
                           <Plus size={11} color="#DEDEDE" />
                         </TouchableOpacity>
                       </View>
                     </View>
                   </View>
-
-                  {/* Beat Breakdown Preview */}
-                  {beats.length > 0 ? (
-                    <View className="bg-resolve-panel border border-resolve-border rounded-xs p-2 max-h-32">
-                      <Text className="text-resolve-muted font-mono text-[9px] font-bold uppercase mb-1.5">
-                        TAKETIME BREAKDOWN ({beats.length} TAKES)
-                      </Text>
-                      <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false}>
-                        {beats.map((beat, idx) => (
-                          <View key={beat.id || idx} className="flex-row justify-between items-center py-1 border-b border-resolve-border/50">
-                            <Text className="text-resolve-accent font-mono text-[9px] font-bold w-16" numberOfLines={1}>
-                              T{idx + 1}: {beat.section}
-                            </Text>
-                            <Text className="text-resolve-text font-mono text-[9px] flex-1 px-2" numberOfLines={1}>
-                              {beat.spokenText}
-                            </Text>
-                            <Text className="text-resolve-muted font-mono text-[8px] w-12 text-right">
-                              {beat.speakingDurationSec}s
-                            </Text>
-                          </View>
-                        ))}
-                      </ScrollView>
-                    </View>
-                  ) : null}
-                </View>
-              )}
-            </View>
+                )}
+              </View>
+            )}
           </ScrollView>
 
-          {/* STUDIO Footer */}
+          {/* Footer Actions */}
           <View className="flex-row justify-between items-center px-4 py-3 bg-resolve-header border-t border-resolve-border">
-            <View className="flex-row items-center gap-1.5 flex-1 mr-2">
-              {isValid && beats.length > 0 ? (
-                <>
-                  <View className="w-1.5 h-1.5 bg-[#22c55e] rounded-full" />
-                  <Text className="text-resolve-text font-mono text-[10px] font-bold uppercase tracking-wider" numberOfLines={1}>
-                    {scriptTitle.trim() || 'READY'} • {beats.length} {beats.length === 1 ? 'TAKE' : 'TAKES'}
-                  </Text>
-                </>
+            <TouchableOpacity
+              className="py-1.5 px-3 rounded-xs border border-resolve-border bg-resolve-recessed active:bg-resolve-border"
+              onPress={onClose}
+              activeOpacity={0.8}
+            >
+              <Text className="text-resolve-text font-mono text-[10px] font-bold uppercase">CANCEL</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              className={`flex-row items-center gap-1.5 py-1.5 px-4 rounded-xs border ${!isValid
+                ? 'bg-resolve-panel border-resolve-border opacity-50'
+                : mode === 'record'
+                  ? 'bg-resolve-crimson border-resolve-crimson active:opacity-80'
+                  : 'bg-resolve-accent border-resolve-accent active:opacity-80'
+                }`}
+              onPress={handleSaveAndConfirm}
+              disabled={!isValid}
+              activeOpacity={0.85}
+            >
+              {mode === 'record' ? (
+                <View className="w-2 h-2 rounded-full bg-white mr-0.5" />
               ) : (
-                <Text className="text-resolve-muted font-mono text-[10px] uppercase" numberOfLines={1}>
-                  {scriptInput.trim() ? 'CANNOT IMPORT INVALID JSON' : 'AWAITING JSON INPUT'}
-                </Text>
+                <Check size={12} color={!isValid ? '#888888' : '#000000'} />
               )}
-            </View>
-
-            <View className="flex-row items-center gap-2">
-              <TouchableOpacity
-                className="py-1.5 px-3 rounded-xs border border-resolve-border bg-resolve-recessed active:bg-resolve-border"
-                onPress={onClose}
-                activeOpacity={0.8}
-              >
-                <Text className="text-resolve-text font-mono text-[10px] font-bold uppercase">
-                  CANCEL
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                className={`flex-row items-center gap-1.5 py-1.5 px-3 rounded-xs border ${(!isValid || beats.length === 0)
-                  ? 'bg-resolve-panel border-resolve-border opacity-50'
-                  : mode === 'record'
-                    ? 'bg-resolve-crimson border-resolve-crimson active:opacity-80'
-                    : 'bg-resolve-accent border-resolve-accent active:opacity-80'
-                  }`}
-                onPress={handleSaveAndConfirm}
-                disabled={!isValid || beats.length === 0}
-                activeOpacity={0.85}
-              >
-                {mode === 'record' ? (
-                  <View className="w-2 h-2 rounded-full bg-white mr-0.5" />
-                ) : (
-                  <Check size={12} color={(!isValid || beats.length === 0) ? '#888888' : '#000000'} />
-                )}
-                <Text className={`font-mono text-[10px] font-bold uppercase ${
-                  (!isValid || beats.length === 0)
-                    ? 'text-resolve-muted'
-                    : mode === 'record'
-                      ? 'text-white'
-                      : 'text-black'
+              <Text className={`font-mono text-[10px] font-bold uppercase tracking-wider ${!isValid ? 'text-resolve-muted' : mode === 'record' ? 'text-white' : 'text-black'
                 }`}>
-                  {mode === 'record' ? 'ARM & RECORD' : 'LOAD TO GALLERY'}
-                </Text>
-              </TouchableOpacity>
-            </View>
+                {mode === 'record' ? 'ARM & RECORD' : 'SAVE TO MEDIA POOL'}
+              </Text>
+            </TouchableOpacity>
           </View>
-
         </View>
       </View>
     </Modal>
